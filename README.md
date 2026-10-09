@@ -1,0 +1,117 @@
+# The Last Cast: first person
+
+A first-person version of The Last Cast, made in Unity 6 (URP) with a stylized low-poly
+look. Play on your own, or host a game for up to 8 friends.
+
+## Play
+
+Run `Game\TheLastCast.exe`. Your progress saves to
+`%USERPROFILE%\AppData\LocalLow\The Last Cast\The Last Cast\profile.json`.
+
+| | |
+| --- | --- |
+| Move / sprint / hop | WASD, hold Shift, Space (a small hop). With a line out you can still walk, slowly |
+| Cast | Hold the left mouse button, release. A ghost bobber shows where it will land (green on water, red where it can't) |
+| Hook / reel | Click when the bobber dips, then hold to reel; let go when the fish pulls |
+| Reel in | Right-click or R (or walk too far from your bobber) |
+| Shops, the zoo, the boat | E at a shop counter, the Travelling Zoo wagon, or the voyage boat when it's docked |
+| At sea | E beats off whatever has grabbed the rail in the boss fight |
+| Chum bucket | C to put one down (buy them at the Bait Shop) |
+| Menus | G tackle, R armour, P pets, I fish index, T goals, K trophies, H history, V events, M map, N online, O / Esc options |
+| Chat | Enter (when you're in a multiplayer game) |
+
+### What's in it (from the web game)
+
+- 110 fish, 86 rods, reels, lines and baits, the Bait Shop and the three travelling tackle shops
+- Levels 1-75, trophies and named giants, the Angler's Map, hotspots
+- **Pets**: all 30, with their abilities. The Travelling Zoo moves around the lake every 15 minutes
+  with three animals (the same ones as the web game at that moment); your pet follows you around.
+- **Armour**: all 15 sets, with per-piece perks and full-set effects
+- **Achievements**: every goal that doesn't need a missing feature, with coin rewards; tackle
+  they unlock needs them again
+- **Chum buckets** and **map events** (Feeding Shoal, Great Haul, Golden Tide), on the web game's
+  clock, scaled for one angler
+- **Boat voyages**: every 15 minutes (on the quarter hour, the same clock as the web game) a boat
+  comes up the East River and docks at the South Beach dock for two minutes. Press E to board.
+  Out at sea you fish from a trawler's deck at 3 of the 8 sea locations, each with its own fish,
+  legendary, time of day and special event (Feeding Frenzy, Treasure Tide, Squall...), with three
+  crew missions.
+- **The boss** at the end of every voyage: the Kraken, Megalodon, the Sea Serpent or the Ghost
+  Whale, with four minutes to beat it. Land fish to hurt it (double in its red weak spot), cast
+  into the golden ring when it breaches to harpoon it, mash E on whatever grabs the rail, and get
+  out of the red part of the deck before it slams. Everyone is paid at the end: points, missions,
+  rank, the boss, and a share of the prize pool.
+
+### Multiplayer (up to 8 anglers)
+
+- **Host:** on the title screen (or the Online tab, N) choose *Host a game*. You get a short
+  join code; send it to your friends. Tick *Private* to keep the game out of the public list.
+- **Join:** *Join a game*, then type the code (or pick a game from the list of open games).
+- Works over the internet with no router setup: connections go through Unity's online
+  service (free tier), linked to this project's Unity Cloud project
+  (`unity-src\cloud-project.txt`). Everyone must play the same build of the game, so share
+  the whole `Game` folder (zip it) with your friends.
+- Shared: everyone's angler, line and pet, catches, trophies and level-ups, chat (Enter),
+  the hotspots, chum buckets, crowding (bobbers close together bite slower) and the map
+  events, which become co-op again (goals grow with the group, everyone who helps is paid).
+- **Voyages together:** everyone who boards the same boat sails the same voyage (same stops,
+  events, missions and boss), sees each other on deck, and shares the missions, the boss's
+  health (it scales with the crew) and the points table.
+- Each player keeps their own progress, coins, tackle and pets on their own PC.
+- If the host leaves, everyone carries on fishing on their own.
+
+To test with two copies on one PC:
+`Game\TheLastCast.exe -screen-fullscreen 0 -nettest host test` and, in a second window,
+`Game\TheLastCast.exe -screen-fullscreen 0 -nettest join test` (screenshots go to `test\`).
+Add `-netvoyage` to both and they then sail a short voyage together.
+
+Not yet: duels and the Hall of Records.
+
+## Updates
+
+The game updates itself from this repo's releases
+(https://github.com/Apollo19-collab/TheLastCast3D/releases). When a newer version is out, the
+title screen and the Options tab (O) offer **Update now**: the game downloads it, closes, puts
+the new files in place and starts again. Your save isn't touched.
+
+To publish a new version (needs the GitHub CLI, signed in):
+
+```
+.\Make-Release.ps1 1.1.0 "What's new"
+```
+
+## Build
+
+Double-click `Make TheLastCast exe.bat`. It installs and signs in to Unity if needed,
+creates the project in `TheLastCastFP\`, copies the game in from `unity-src\` and builds
+`Game\TheLastCast.exe`. Run it again after changing anything in `unity-src\`.
+
+To check how things look without playing, run
+`Game\TheLastCast.exe -screen-fullscreen 0 -autoshot shots`: it saves screenshots of a few
+spots and menus, then a shortened voyage and boss fight, into `shots\` and quits, without
+touching your save.
+
+## Models (Blender)
+
+The 3D models (trees, rocks, boats, the shops, the zoo wagon, anglers and hats, the rod, the
+fish, the 30 pets and the four bosses) are made in Blender by `blender\lastcast_models.py` and
+exported as FBX into `unity-src\Assets\LastCast\Resources\Models`. To rebuild them after
+changing the script:
+
+```
+G:\Blender\blender.exe --background --factory-startup --python blender\lastcast_models.py
+```
+
+Add `-- tree pine` to build only some kinds, and `--preview <folder>` (with `--each` for one
+picture per model) to render previews. Parts the game colours itself (a shop's awning, an
+angler's jacket, a fish's body) are painted white with a region code in the alpha channel.
+Anything without a model falls back to the game's own code-built shapes.
+
+## What's where
+
+- `unity-src\Assets\LastCast\`: the game's code, shaders and data (the source of truth;
+  the build script copies it into the Unity project)
+- `unity-export\export-data.mjs`: exports the world and game data from the web version
+  (`TheLastCast\`) into `GameData.json` and `World.bytes`. Re-run it after changing the web
+  game's fish, tackle or map: `node unity-export\export-data.mjs TheLastCast unity-src\Assets\LastCast\Resources`
+- `TheLastCast\`: the web version (Node server and browser client)
