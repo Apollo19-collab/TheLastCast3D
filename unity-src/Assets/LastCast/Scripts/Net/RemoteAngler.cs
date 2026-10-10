@@ -108,11 +108,11 @@ namespace LastCast
                 transform.position = target;
                 pet.position = target;
             }
-            string want = $"{st.hat}|{st.col}";
+            string want = $"{st.ar}|{st.col}";
             if (want != look)
             {
                 look = want;
-                RebuildBody(AnglerMesh.Build(st.hat, Colours[st.col % Colours.Length]));
+                RebuildBody(AnglerMesh.Build(st.ar, Colours[st.col % Colours.Length]));
             }
             tag.text = $"{st.n}\n<size=32>Lv {st.lv}</size>";
             tag.richText = true;
@@ -124,6 +124,12 @@ namespace LastCast
             transform.position = Vector3.SmoothDamp(transform.position, target, ref vel, 0.1f);
             yaw = Mathf.LerpAngle(yaw, State.yaw, 1 - Mathf.Exp(-12 * Time.deltaTime));
             transform.rotation = Quaternion.Euler(0, yaw, 0);
+            if (body)
+            {
+                // On the trawler's deck they ride its roll and pitch too.
+                if (Place.IsSea(transform.position)) body.SetPositionAndRotation(SeaWorld.Tilted(transform.position), SeaWorld.Tilt * transform.rotation);
+                else body.SetLocalPositionAndRotation(Vector3.zero, Quaternion.identity);
+            }
 
             var ls = (LineState)State.ls;
             bool lineOut = ls != LineState.Idle;
@@ -309,34 +315,62 @@ namespace LastCast
             return MeshKit.Hex(set?.look != null && set.look.TryGetValue("jacket", out var v) ? v : fallback);
         }
 
-        public static Mesh Build(string setId, string colour)
+        public static readonly string[] Slots = { "head", "body", "legs", "feet" };
+
+        /// <summary>What a profile is wearing, as AnglerState.ar: each slot's armour set (head|body|legs|feet), empty for none.</summary>
+        public static string GearOf(Profile p) => string.Join("|", Slots.Select(sl =>
+            p.armour.TryGetValue(sl, out var id) && id != null ? GameData.I.Piece(id).set?.id ?? "" : ""));
+
+        /// <summary>The same with one piece swapped in (trying it on in the Armour tab).</summary>
+        public static string With(string gear, string slot, string setId)
         {
-            string key = $"{setId}|{colour}";
+            var parts = (gear ?? "|||").Split('|');
+            if (parts.Length < 4) parts = new[] { "", "", "", "" };
+            parts[System.Array.IndexOf(Slots, slot)] = setId ?? "";
+            return string.Join("|", parts);
+        }
+
+        /// <summary>
+        /// An angler in the armour they're wearing (gear: each slot's set, head|body|legs|feet): the Blender angler
+        /// (head, face, hands) with each slot's piece from gear.fbx, its set's own model (an oilskin coat, a pea
+        /// coat, a diving helmet...), or the plain default (a shirt in the player's colour, jeans, trainers; no hat).
+        /// </summary>
+        public static Mesh Build(string gear, string colour)
+        {
+            string key = $"{gear}|{colour}";
             if (cache.TryGetValue(key, out var m)) return m;
+            var sets = (gear ?? "").Split('|');
+            string SetIn(int slot) => slot < sets.Length && sets[slot].Length > 0 ? sets[slot] : null;
+            var baseModel = Models.Get("angler");
+            if (baseModel && Models.Named("gear", "gear_body_default"))
+            {
+                var parts = new List<CombineInstance> { new CombineInstance { mesh = baseModel, transform = Matrix4x4.identity } };
+                for (int i = 0; i < Slots.Length; i++)
+                {
+                    var set = SetIn(i);
+                    var piece = (set != null ? Models.Named("gear", $"gear_{Slots[i]}_{set}") : null) ?? Models.Named("gear", $"gear_{Slots[i]}_default");
+                    if (!piece) continue; // no hat
+                    if (set == null) piece = Models.Recolour(piece, MeshKit.Hex(colour)); // the default shirt, in the player's colour
+                    parts.Add(new CombineInstance { mesh = piece, transform = Matrix4x4.identity });
+                }
+                m = new Mesh { name = "angler " + key, indexFormat = UnityEngine.Rendering.IndexFormat.UInt32 };
+                m.CombineMeshes(parts.ToArray(), true, true);
+                cache[key] = m;
+                return m;
+            }
+            return Simple(SetIn(1), colour, key);
+        }
+
+        /// <summary>Boxes, if the models are missing.</summary>
+        static Mesh Simple(string setId, string colour, string key)
+        {
+            Mesh m;
             var set = setId != null ? GameData.I.SetById(setId) : null;
             string Look(string k, string fallback) => set?.look != null && set.look.TryGetValue(k, out var v) ? v : fallback;
             Color32 jacket = MeshKit.Hex(Look("jacket", colour)), boots = MeshKit.Hex(Look("boots", "#3b2f2f")),
                 waders = MeshKit.Shade(MeshKit.Hex(Look("boots", "#4a5a3a")), 1.25f), skin = MeshKit.Hex("#f1c27d"),
                 hatColour = MeshKit.Hex(Look("hatColor", "#c2a878")), trim = MeshKit.Hex(Look("trim", Look("hatColor", "#c2a878")));
             string hat = Look("hat", "bucket");
-            // The Blender angler and hat, in this set's colours.
-            var bodyModel = Models.Get("angler");
-            var hatModel = Models.Named("hat", "hat_" + hat) ?? Models.Named("hat", "hat_bucket");
-            if (bodyModel && hatModel)
-            {
-                // The hat goes with the head (limb 5) when it nods.
-                var hatMesh = Models.Recolour(hatModel, default, default, default, hatColour, trim);
-                hatMesh.SetUVs(0, Enumerable.Repeat(new Vector2(5, 0), hatMesh.vertexCount).ToList());
-                var combine = new[]
-                {
-                    new CombineInstance { mesh = Models.Recolour(bodyModel, jacket, boots, waders), transform = Matrix4x4.identity },
-                    new CombineInstance { mesh = hatMesh, transform = Matrix4x4.identity },
-                };
-                m = new Mesh { name = "angler " + key };
-                m.CombineMeshes(combine, true, true);
-                cache[key] = m;
-                return m;
-            }
             var k = new MeshKit();
             // Legs and boots.
             foreach (float x in new[] { -0.13f, 0.13f })

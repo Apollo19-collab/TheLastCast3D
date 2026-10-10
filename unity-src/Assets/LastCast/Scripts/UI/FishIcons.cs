@@ -9,7 +9,7 @@ namespace LastCast
 {
     public class FishIcons : MonoBehaviour
     {
-        const int Layer = 31; // only the icon camera sees this layer
+        public const int Layer = 31; // only the icon cameras (fish, pets, the armour preview) see this layer
         const int W = 256, H = 128;
 
         static FishIcons instance;

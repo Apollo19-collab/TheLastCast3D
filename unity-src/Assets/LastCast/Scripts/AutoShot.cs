@@ -59,12 +59,20 @@ namespace LastCast
 
         IEnumerator Start()
         {
+            var cmd = System.Environment.GetCommandLineArgs();
+            int ai = System.Array.IndexOf(cmd, "-attacks");
+            if (ai >= 0 && ai + 1 < cmd.Length)
+            {
+                yield return AttackTour(cmd[ai + 1]);
+                yield break;
+            }
             var g = Game.I;
             var data = GameData.I;
             g.Profile.worldMap = true; // in memory only
             g.Profile.pets.AddRange(new[] { "dragon", "owl", "lilyfrog" });
             g.Profile.pet = "dragon";
             g.Profile.coins += 20000;
+            foreach (var (slot, set) in new[] { ("head", "mariner"), ("body", "oilskin"), ("legs", "storm"), ("feet", "trophy") }) g.Profile.armour[slot] = $"{set}_{slot}";
             yield return new WaitForSeconds(5);
             g.Hud.OpenForScreenshot("title");
             yield return new WaitForSeconds(0.5f);
@@ -182,6 +190,78 @@ namespace LastCast
         }
 
         /// <summary>
+        /// -attacks &lt;boss&gt;: a short voyage straight to that boss, then each of its attacks in turn (and a grab),
+        /// photographed as it comes, as it lands and after, from the deck.
+        /// </summary>
+        IEnumerator AttackTour(string bossId)
+        {
+            var g = Game.I;
+            var v = Voyage.I;
+            var data = GameData.I;
+            yield return new WaitForSeconds(5);
+            g.Hud.OpenForScreenshot("hidden");
+            double now = BoatSchedule.Now, c = now % data.boat.interval;
+            BoatSchedule.Offset = data.boat.interval - c + 40;
+            Voyage.TestBoss = bossId;
+            Voyage.TestTiming = new VoyageTiming
+            {
+                stops = 1, missions = 3, missionReward = 100, outbound = 2, fishing = 3, sailing = 2, bossIntro = 3, boss = 400, results = 10,
+                eventEarliest = 99, eventLength = 1, pointsBonus = 0.25f, rankBonus = new[] { 300, 150, 75 },
+            };
+            v.TestLaunch();
+            while (v.Phase != VoyagePhase.Boss || v.Boss == null) yield return null;
+            var b = v.Boss;
+            b.nextBreachAt = b.nextGrabAt = b.nextAttackAt = 9999;
+            yield return new WaitForSeconds(2);
+            var o = SeaWorld.Origin;
+            int n = 0;
+            foreach (var id in v.BossInfo.attacks)
+            {
+                Voyage.TestAttack = id;
+                b.nextAttackAt = b.clock;
+                while (b.attack == null) yield return null;
+                // Stand across the deck from where it's coming, and look that way (or at the boss).
+                Vector3 look;
+                if (b.attackArea != null)
+                {
+                    var a = data.voyage.DeckArea(b.attackArea);
+                    var centre = SeaWorld.ToUnity(a.x + a.w / 2, a.y + a.h / 2, SeaWorld.DeckY);
+                    float side = b.attackArea == "port" ? 1 : b.attackArea == "starboard" ? -1 : b.attackSeed % 2 == 0 ? 1 : -1;
+                    g.Player.Teleport(new Vector3(centre.x - 12, 0, o.z - side * 4), 0);
+                    look = centre + new Vector3(0, 3, side * 8);
+                }
+                else
+                {
+                    g.Player.Teleport(new Vector3(o.x - 4, 0, o.z), 0);
+                    look = id == "thrash" && bossId == "megalodon" ? new Vector3(o.x - 30, 2, o.z) : SeaWorld.I.BossPosition + Vector3.up * 3;
+                }
+                bool fixedLook = b.attackArea != null;
+                int k = 0;
+                foreach (float when in new[] { -1.6f, -0.3f, 0.3f, 1.5f, 3.5f })
+                {
+                    while ((b.attack != null ? b.clock - b.attackAt : b.clock - b.landedAt) < when) yield return null;
+                    g.Player.Face(fixedLook ? look : SeaWorld.I.BossPosition + Vector3.up * 3);
+                    yield return Shot($"attack-{bossId}-{n}-{id}-{k++}");
+                }
+                while (b.clock - b.landedAt < 7) yield return null;
+                n++;
+            }
+            Voyage.TestAttack = null;
+            // A grab, rising out of the water onto the rail.
+            b.nextGrabAt = b.clock;
+            while (b.grabs.Count == 0) yield return null;
+            var grab = b.grabs[0];
+            var at = SeaWorld.ToUnity(grab.x, grab.y, SeaWorld.DeckY);
+            g.Player.Teleport(new Vector3(at.x - 7, 0, o.z - Mathf.Sign(at.z - o.z) * 2), 0);
+            g.Player.Face(at + Vector3.up * 1.5f);
+            yield return new WaitForSeconds(0.4f);
+            yield return Shot($"attack-{bossId}-grab-0");
+            yield return new WaitForSeconds(1.2f);
+            yield return Shot($"attack-{bossId}-grab-1");
+            Application.Quit();
+        }
+
+        /// <summary>
         /// The animations, frozen at a few moments: each boss (and what it grabs the rail with) in a studio far
         /// below the world, then a line of other players walking, running, hopping, charging a cast, casting and reeling.
         /// </summary>
@@ -221,12 +301,12 @@ namespace LastCast
             // Other players, side on.
             var poses = new (string what, AnglerState st, Vector3 vel)[]
             {
-                ("idle", new AnglerState(), Vector3.zero),
-                ("walk", new AnglerState(), new Vector3(0, 0, Tuning.WalkSpeed)),
-                ("run", new AnglerState { sp = true }, new Vector3(0, 0, Tuning.WalkSpeed * Tuning.SprintSpeed)),
-                ("charge", new AnglerState { ch = 0.95f }, Vector3.zero),
-                ("cast", new AnglerState { ls = (int)LineState.Casting }, Vector3.zero),
-                ("reel", new AnglerState { ls = (int)LineState.Reeling, tn = 0.6f }, Vector3.zero),
+                ("idle", new AnglerState { ar = "canvas|canvas|canvas|canvas" }, Vector3.zero),
+                ("walk", new AnglerState { ar = "oilskin|oilskin|oilskin|oilskin" }, new Vector3(0, 0, Tuning.WalkSpeed)),
+                ("run", new AnglerState { sp = true, ar = "seadog|seadog|seadog|seadog" }, new Vector3(0, 0, Tuning.WalkSpeed * Tuning.SprintSpeed)),
+                ("charge", new AnglerState { ch = 0.95f, ar = "abyssal|abyssal|abyssal|abyssal" }, Vector3.zero),
+                ("cast", new AnglerState { ls = (int)LineState.Casting, ar = "emberforged|emberforged|emberforged|emberforged" }, Vector3.zero),
+                ("reel", new AnglerState { ls = (int)LineState.Reeling, tn = 0.6f, ar = "|||" }, Vector3.zero),
             };
             var anglers = new List<RemoteAngler>();
             for (int i = 0; i < poses.Length; i++)

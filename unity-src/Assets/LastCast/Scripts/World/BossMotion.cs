@@ -79,25 +79,32 @@ namespace LastCast
                     {
                         var coil = rig[l];
                         if (coil == null) continue;
-                        // Each coil rolls up and down in turn, a wave travelling along the body.
-                        float roll = Mathf.Sin(t * 1.1f - l * 1.2f) * wild;
-                        coil.Bones[0].localPosition = coil.Joints[0] + Vector3.up * roll * 0.9f;
+                        // One long body: the coils roll up and down one after another and slide along as it swims,
+                        // and a ripple runs over each arch from end to end.
+                        float ph = t * 1.25f - l * 1.15f;
+                        coil.Bones[0].localPosition = coil.Joints[0] + Vector3.up * Mathf.Sin(ph) * 1.4f * wild
+                                                      + Vector3.forward * Mathf.Sin(ph + 1.3f) * 1.2f + Vector3.right * Mathf.Sin(t * 0.6f + l) * 0.7f;
                         int n = coil.Count;
                         for (int i = 0; i < n; i++)
-                            Set(coil, i, Quaternion.AngleAxis(Mathf.Sin(t * 1.4f - i * 0.8f + l) * 2.5f * wild, coil.Across)
-                                         * Quaternion.AngleAxis(Mathf.Sin(t * 0.8f - i * 0.5f + l * 2) * 2f, Vector3.up));
+                        {
+                            float bend = Mathf.Sin(t * 2.1f - i * 0.75f + l) * 4f * wild;
+                            float sway = Mathf.Sin(t * 1.05f - i * 0.45f + l * 1.7f) * 3.5f;
+                            float twist = Mathf.Sin(t * 1.4f - i * 0.6f + l) * 3f;
+                            Set(coil, i, Quaternion.AngleAxis(bend, coil.Across) * Quaternion.AngleAxis(sway, Vector3.up) * Quaternion.AngleAxis(twist, coil.Dir));
+                        }
                     }
                     var neck = rig[5];
                     if (neck != null)
                     {
+                        // The neck weaves in a slow S like a cobra's, more towards the head; drawing back as a slam comes.
                         int n = neck.Count;
                         for (int i = 0; i < n; i++)
                         {
                             float s = i / (n - 1f);
-                            float sway = Mathf.Sin(t * 0.9f - i * 0.35f) * 4.5f * wild;
-                            // Draws back as a slam comes, then strikes.
-                            float lift = Mathf.Sin(t * 0.7f - i * 0.4f) * 3f * wild + (rear > 0 ? -rear * 5f * (1 - s) : 0);
-                            Set(neck, i, Quaternion.AngleAxis(lift, neck.Across) * Quaternion.AngleAxis(sway, Vector3.up));
+                            float sway = Mathf.Sin(t * 0.85f - i * 0.42f) * 6.5f * wild * (0.4f + s);
+                            float lift = Mathf.Sin(t * 0.7f - i * 0.38f) * 4f * wild * (0.4f + s) + (rear > 0 ? -rear * 6f * (1 - s) + rear * 9f * s : 0);
+                            float roll = Mathf.Sin(t * 0.6f - i * 0.3f) * 4f * s;
+                            Set(neck, i, Quaternion.AngleAxis(lift, neck.Across) * Quaternion.AngleAxis(sway, Vector3.up) * Quaternion.AngleAxis(roll, neck.Dir));
                         }
                     }
                     break;

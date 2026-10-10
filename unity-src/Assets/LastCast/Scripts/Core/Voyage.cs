@@ -50,6 +50,10 @@ namespace LastCast
         public int phase;
         public string attack, attackArea; // an attack being telegraphed, and the deck area a slam will hit
         public float attackAt; // when it lands (fight clock)
+        public int attackSeed; // which attack of the fight it is (for where it comes from)
+        public string lastAttack, lastArea; // the attack that last landed, its deck area, when, and its seed: its animation plays on
+        public float landedAt = -99;
+        public int lastSeed;
         public string effect; // an attack's lingering effect (ink, whirlpool)
         public float effectUntil;
         public BossBreach breach;
@@ -78,6 +82,9 @@ namespace LastCast
 
         /// <summary>For testing: shorter timings (AutoShot), used by the next launch.</summary>
         public static VoyageTiming TestTiming;
+        /// <summary>For testing (AutoShot -attacks): the boss to meet, and the attack it uses next.</summary>
+        public static string TestBoss;
+        public static string TestAttack;
 
         public VoyageTiming T { get; private set; }
         /// <summary>The voyage you're booked on while standing aboard the docked boat (its departure time), or 0.</summary>
@@ -287,7 +294,7 @@ namespace LastCast
                 int goal = Mathf.Max((int)m.min, Mathf.RoundToInt(m.perAngler * Crew));
                 Missions.Add(new VoyageMission { def = m, goal = goal, text = m.text.Replace("{n}", goal.ToString()) });
             }
-            BossId = Shuffled(V.bosses, rng)[0].id;
+            BossId = TestBoss ?? Shuffled(V.bosses, rng)[0].id;
             Score(Me, Multiplayer.PlayerName);
 
             int n = V.hotspots.count;
@@ -618,18 +625,19 @@ namespace LastCast
                 return;
             }
             if (b.clock < b.nextAttackAt) return;
+            b.attackSeed = b.attacks;
             var rng = Stream("attack", b.attacks++);
             string id = b.info.attacks[Mathf.FloorToInt(rng.Next() * b.info.attacks.Length) % b.info.attacks.Length];
+            if (TestAttack != null) id = TestAttack;
             var a = V.Attack(id);
             b.attack = id;
             b.attackAt = b.clock + B.warning;
-            string name = a.name, desc = a.desc;
+            var (name, desc) = BossMoves.Describe(b.info, a, null);
             if (a.area)
             {
                 var area = V.deckAreas[Mathf.FloorToInt(rng.Next() * V.deckAreas.Count) % V.deckAreas.Count];
                 b.attackArea = area.id;
-                name = b.info.slam;
-                desc = $"Get away from {area.name}! Anyone caught there is dazed and loses their fish.";
+                (name, desc) = BossMoves.Describe(b.info, a, area.name);
             }
             Game.I.Banner($"{name}!", desc, Skin.Red);
             Game.I.Hud.Feed($"{b.info.name} is about to use {name}! {desc}", Skin.Red);
@@ -640,6 +648,10 @@ namespace LastCast
         {
             var a = V.Attack(b.attack);
             string area = b.attackArea;
+            b.lastAttack = b.attack;
+            b.lastArea = area;
+            b.landedAt = b.clock;
+            b.lastSeed = b.attackSeed;
             b.attack = null;
             b.attackArea = null;
             b.nextAttackAt = AttackDelay();
@@ -666,8 +678,8 @@ namespace LastCast
             }
             else
             {
-                Game.I.Hud.Feed($"{a.name}! {a.desc}", Skin.Red);
-                SeaWorld.I.Shake(0.3f);
+                var (name, desc) = BossMoves.Describe(b.info, a, null);
+                Game.I.Hud.Feed($"{name}! {desc}", Skin.Red);
             }
         }
 

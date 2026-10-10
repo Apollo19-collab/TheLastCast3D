@@ -978,16 +978,34 @@ namespace LastCast
             return parts.Count > 0 ? string.Join(" · ", parts) : "none yet";
         }
 
+        string tryOn, tryOnNext; // armour with a piece you're pointing at swapped in, for the preview
+
         void DrawArmour()
         {
             var data = GameData.I;
             var b = P.Bonuses;
             Note($"<b>Level {P.Level}</b> · {Num(P.coins)} coins. Armour doesn't change your tackle: it adds bonuses of its own. Wear all four pieces of a set for its set effect. Higher levels unlock better sets.");
+            // Your angler in what you're wearing; point at a piece below to try it on.
+            var ev = Event.current;
+            if (ev.type == EventType.Repaint) { tryOn = tryOnNext == AnglerMesh.GearOf(P) ? null : tryOnNext; tryOnNext = null; }
+            GUILayout.BeginHorizontal();
+            var pr = GUILayoutUtility.GetRect(S(210), S(280), GUILayout.Width(S(210)), GUILayout.Height(S(280)));
+            GUI.DrawTexture(pr, Skin.Rounded(12, new Color(1, 1, 1, 0.07f), new Color(1, 1, 1, 0.02f), Skin.Border, 1));
+            float drag = 0;
+            if (ev.type == EventType.MouseDrag && pr.Contains(ev.mousePosition)) { drag = -ev.delta.x * 0.9f; ev.Use(); }
+            var mp = Multiplayer.I;
+            var preview = AnglerPreview.Get(tryOn ?? AnglerMesh.GearOf(P), mp != null && mp.Online ? (int)(mp.MyId % 10) : 0, drag);
+            if (preview) GUI.DrawTexture(new Rect(pr.x + S(4), pr.y + S(4), pr.width - S(8), pr.height - S(26)), preview, ScaleMode.ScaleToFit);
+            Label(new Rect(pr.x, pr.yMax - S(22), pr.width, S(18)), tryOn != null ? "Trying it on" : "Drag to turn", smallDim, tryOn != null ? Skin.Gold : (Color?)null, TextAnchor.MiddleCenter);
+            GUILayout.Space(S(10));
             GUILayout.BeginVertical(row);
             GUILayout.Label($"<b>Wearing:</b> {string.Join(" · ", data.armourSlots.Select(sl => P.armour.TryGetValue(sl, out var id) && id != null ? data.SetById(data.Piece(id).set.id).pieces[sl] : $"no {data.armourSlotLabels[sl].ToLower()}"))}", small);
             GUILayout.Label($"<b>Bonuses:</b> {BonusText(b)}", small);
             if (b.set != null) GUILayout.Label($"<color=#ffd166><b>Set effect: {data.SetById(b.set).effect.name}</b> · {data.SetById(b.set).effect.desc}</color>", small);
+            GUILayout.Label("Every piece looks different: point at one below to see it on you. Other anglers see what you wear.", smallDim);
+            GUILayout.FlexibleSpace();
             GUILayout.EndVertical();
+            GUILayout.EndHorizontal();
             foreach (var set in data.sets)
             {
                 bool locked = P.Level < set.level;
@@ -1018,6 +1036,8 @@ namespace LastCast
                         GUI.enabled = true;
                     }
                     GUILayout.EndVertical();
+                    if (ev.type == EventType.Repaint && GUILayoutUtility.GetLastRect().Contains(ev.mousePosition))
+                        tryOnNext = AnglerMesh.With(AnglerMesh.GearOf(P), sl, set.id);
                 }
                 GUILayout.EndHorizontal();
                 GUILayout.EndVertical();

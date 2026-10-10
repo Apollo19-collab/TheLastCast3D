@@ -156,6 +156,12 @@ namespace LastCast
             Shake = Mathf.Max(0, Shake - Time.deltaTime * 1.2f);
             Cam.transform.localPosition = new Vector3(0, EyeHeight + (GraphicsOptions.HeadBob ? Mathf.Sin(bob) * 0.04f : 0), 0) + jolt;
             Cam.transform.localRotation = Quaternion.Euler(pitch + jolt.y * 8, jolt.x * 6, jolt.z * 6);
+            // On the trawler you ride its roll and pitch.
+            if (Place.AtSea)
+            {
+                Cam.transform.position = SeaWorld.Tilted(Cam.transform.position);
+                Cam.transform.rotation = SeaWorld.Tilt * Cam.transform.rotation;
+            }
         }
 
         /// <summary>Slide along whatever blocks you (water, stalls, trunks, the rail), one axis at a time, as the web game does.</summary>

@@ -88,14 +88,81 @@ class Kit:
 
     @contextmanager
     def limb(self, index, along):
-        """Everything built inside belongs to limb `index`; along(co) gives how far along it each point is (0..1)."""
+        """Everything built inside belongs to limb `index` (or index(co), point by point: a coat's skirt follows
+        whichever leg it's beside); along(co) gives how far along the limb each point is (0..1)."""
         before = set(self.bm.faces)
         yield
         for f in self.bm.faces:
             if f in before:
                 continue
             for l in f.loops:
-                l[self.uv].uv = (index, max(0.0, min(1.0, along(l.vert.co))))
+                co = l.vert.co
+                l[self.uv].uv = (index(co) if callable(index) else index, max(0.0, min(1.0, along(co))))
+
+    def tube_r(self, points, radii, color, sides=8, jitter=0.05, cap=True):
+        """A tube along a path with its own radius at each point (a leg: thigh, knee, ankle), faces outwards."""
+        rings, n = [], len(points)
+        P = [Vector(p) for p in points]
+        for i, p in enumerate(P):
+            d = (P[min(i + 1, n - 1)] - P[max(i - 1, 0)]).normalized()
+            up = Vector((0, 0, 1)) if abs(d.z) < 0.95 else Vector((1, 0, 0))
+            u = d.cross(up).normalized()
+            w = d.cross(u)
+            rings.append([self.bm.verts.new(p + (u * math.cos(a) + w * math.sin(a)) * radii[i])
+                          for a in [s / sides * math.tau for s in range(sides)]])
+        faces = []
+        for i in range(n - 1):
+            mid = (P[i] + P[i + 1]) / 2
+            ring = []
+            for s in range(sides):
+                f = self.bm.faces.new((rings[i][s], rings[i][(s + 1) % sides], rings[i + 1][(s + 1) % sides], rings[i + 1][s]))
+                ring.append(f)
+            self.orient(ring, lambda f, m=mid: f.calc_center_median() - m)
+            faces += ring
+        if cap:
+            for ring, p, q in ((rings[0], P[0], P[1]), (rings[-1], P[-1], P[-2])):
+                f = self.bm.faces.new(ring)
+                self.orient([f], lambda f, p=p, q=q: p - q)
+                faces.append(f)
+        self.paint(faces, color, jitter)
+        return faces
+
+    def cut(self, faces, pred):
+        """Remove the faces that match (an opening in a hood)."""
+        bmesh.ops.delete(self.bm, geom=[f for f in faces if f.is_valid and pred(f)], context='FACES_ONLY')
+
+    def vloft(self, sections, colour, sides=16, bottom=True, top=True):
+        """A body round the vertical (a torso, a coat, a helmet): sections [(z, half-width, half-depth, forward)]
+        from the bottom up. colour is a colour, or colour(centre, normal) for each face."""
+        rings = []
+        for z, rx, ry, cy in sections:
+            rings.append([self.bm.verts.new((rx * math.cos(a), cy + ry * math.sin(a), z)) for a in [s / sides * math.tau for s in range(sides)]])
+        faces = []
+        for i in range(len(rings) - 1):
+            for s in range(sides):
+                t = (s + 1) % sides
+                faces.append(self.bm.faces.new((rings[i][s], rings[i][t], rings[i + 1][t], rings[i + 1][s])))
+        cys = [(z, cy) for z, rx, ry, cy in sections]
+
+        def out(f):
+            c = f.calc_center_median()
+            return Vector((c.x, c.y - interp(cys, c.z), 0))
+
+        self.orient(faces, out)
+        if bottom:
+            f = self.bm.faces.new(rings[0])
+            self.orient([f], lambda f: Vector((0, 0, -1)))
+            faces.append(f)
+        if top:
+            f = self.bm.faces.new(rings[-1])
+            self.orient([f], lambda f: Vector((0, 0, 1)))
+            faces.append(f)
+        for f in faces:
+            c = colour(f.calc_center_median(), f.normal) if callable(colour) else colour
+            k = 1 + (self.rnd.random() - 0.5) * 0.06
+            for l in f.loops:
+                l[self.col] = shade(c, k)
+        return faces
 
     # -- painting --
     def paint(self, faces, color, jitter=0.06):
@@ -880,104 +947,608 @@ def signpost(i):
 # ---- anglers and tackle -------------------------------------------------------------------------------------
 
 SKIN = hexc('#f1c27d')
+SKIN_DARK = hexc('#d9a066')
+HAIR = hexc('#5b3a1e')
 EYE = hexc('#1e1e1e')
 
-def angler(i):
-    """Another player, as you see them: facing +Y, 1.85 m tall. Regions: A jacket, B boots, C waders.
-    The right hand holds the rod at (0.32, 0.25, 1.15). Hats are separate (hat_*), from 1.76 m up.
-    Limbs (for the walk and cast animations): 1 left leg, 2 right leg (hip, knee), 3 left arm, 4 right arm
-    (shoulder, elbow), 5 the head."""
-    k = Kit(80)
-    J, Bt, W = region('A'), region('B'), region('C')
+# The angler's skeleton (the game rigs it with these joints: World/LimbRig.cs, Net/RemoteAngler.cs): facing +Y,
+# feet at z = 0, hips 0.9, knees 0.5, shoulders 1.42, neck 1.52. Limbs: 1 left leg, 2 right leg, 3 left arm,
+# 4 right arm (holding the rod out in front, the hand at (0.32, 0.27, 1.15)), 5 the head.
+ARM = {-1: ((-0.3, 0, 1.42), (-0.36, 0.03, 1.17), (-0.33, 0.09, 0.96)),
+       1: ((0.3, 0, 1.42), (0.38, 0.12, 1.22), (0.33, 0.24, 1.16))}
+HAND = {-1: (-0.33, 0.11, 0.91), 1: (0.32, 0.27, 1.15)}
 
-    def leg_t(co):  # hip (z 0.9) 0, knee (z 0.5) 0.5, sole 1
-        return 0.5 * (0.9 - co.z) / 0.4 if co.z > 0.5 else 0.5 + 0.5 * (0.5 - co.z) / 0.5
+def leg_t(co):  # hip (z 0.9) 0, knee (z 0.5) 0.5, sole 1
+    return 0.5 * (0.9 - co.z) / 0.4 if co.z > 0.5 else 0.5 + 0.5 * (0.5 - co.z) / 0.5
 
+def leg_of(co):  # a coat's skirt follows the leg it's beside
+    return 1 if co.x < 0 else 2
+
+def arm_t(side):
+    a, e, w = ARM[side]
+    return jointed(a, e, HAND[side])
+
+def head_t(co):
+    return 0.0
+
+def torso(k, colour, bottom=0.86, bulk=0.0, top=1.52, flare=0.0, skirt=None, sides=18):
+    """A torso from the hips (or lower, a coat's skirt) to the neck. bulk: extra thickness; flare: how much a
+    skirt below the hips widens. Anything below the hips is split between the legs (skirt: its lowest point)."""
+    b = 1 + bulk
+    secs = [(0.86, 0.205, 0.15, 0.0), (0.95, 0.21, 0.145, 0.0), (1.05, 0.215, 0.15, 0.005), (1.18, 0.245, 0.16, 0.01),
+            (1.3, 0.265, 0.165, 0.01), (1.4, 0.28, 0.155, 0.0), (1.47, 0.2, 0.125, 0.0), (1.52, 0.1, 0.09, 0.0)]
+    secs = [(z, rx * b, ry * b, cy) for z, rx, ry, cy in secs if z <= top + 1e-6]
+    if skirt is not None:
+        lower = []
+        for j in range(1, 4):
+            z = 0.86 - (0.86 - skirt) * j / 3
+            lower.append((z, (0.21 + flare * j / 3) * b, (0.155 + flare * 0.7 * j / 3) * b, 0.0))
+        secs = list(reversed(lower)) + secs
+        with k.limb(lambda co: leg_of(co) if co.z < 0.84 else 0, lambda co: leg_t(co) if co.z < 0.84 else 0):
+            return k.vloft(secs, colour, sides=sides)
+    return k.vloft(secs, colour, sides=sides)
+
+def sleeve(k, side, colour, r0=0.085, r1=0.065, cuff=None, cuff_r=0.0, shoulder=None, upto=1.0):
+    """A sleeve down an arm (moving with it), with a cuff at the wrist and a rounded shoulder."""
+    a, e, w = (Vector(p) for p in ARM[side])
+    w = e.lerp(w, upto)
+    with k.limb(4 if side > 0 else 3, arm_t(side)):
+        k.tube_r([a, a.lerp(e, 0.5), e, e.lerp(w, 0.5), w], [r0, r0 * 0.97, (r0 + r1) / 2 + 0.005, r1 * 1.02, r1], colour, sides=8)
+        k.ico(a + Vector((side * 0.01, 0, 0.005)), (r0 * 1.15, r0 * 1.05, r0 * 1.1), shoulder or colour, subdiv=1, rough=0.02)
+        if cuff:
+            d = (w - e).normalized()
+            k.tube_r([w - d * 0.045, w + d * 0.01], [cuff_r or r1 * 1.15, cuff_r or r1 * 1.15], cuff, sides=8)
+
+def trousers(k, colour, r=(0.11, 0.1, 0.085), bottom=0.1, pelvis=True, belt=None, knees=None, stripe=None):
+    """Both legs from the hips down to the ankles (moving with them), and the seat."""
     for limb, x in ((1, -0.12), (2, 0.12)):
         with k.limb(limb, leg_t):
-            k.ico((x, 0.04, 0.08), (0.1, 0.16, 0.085), Bt, subdiv=1, rough=0.04)
-            k.tube([(x, 0, 0.12), (x * 1.02, 0.01, 0.5), (x * 1.08, 0, 0.88)], 0.095, 0.115, W, sides=7)
-    k.ico((0, 0, 0.92), (0.23, 0.15, 0.13), W, subdiv=1, rough=0.02)
-    k.ico((0, 0, 1.2), (0.26, 0.17, 0.3), J, subdiv=2, rough=0.02)
-    k.ico((0, 0.01, 1.4), (0.3, 0.17, 0.11), J, subdiv=1, rough=0.02)
-    # Wader bib and braces over the jacket; vest pockets.
-    k.box((0, 0.155, 1.08), (0.26, 0.03, 0.26), W)
-    for x in (-0.09, 0.09):
-        k.box((x, 0.165, 1.32), (0.04, 0.025, 0.24), W)
-        k.box((x * 1.6, 0.168, 1.24), (0.09, 0.02, 0.08), region('A', 0.8))
-    belt = [(0.25 * math.cos(a), 0.165 * math.sin(a), 0.97) for a in [j / 12 * math.tau for j in range(13)]]
-    k.tube(belt, 0.03, 0.03, hexc('#4a3424'), sides=4, cap=False)
-    # Arms: the left hangs down, the right holds the rod out in front.
-    with k.limb(3, jointed((-0.3, 0, 1.42), (-0.36, 0.03, 1.17), (-0.33, 0.11, 0.91))):
-        k.tube([(-0.3, 0, 1.42), (-0.36, 0.03, 1.17), (-0.33, 0.09, 0.96)], 0.075, 0.06, J, sides=6)
-        k.ico((-0.33, 0.11, 0.91), 0.055, SKIN, subdiv=1, rough=0.05)
-    with k.limb(4, jointed((0.3, 0, 1.42), (0.38, 0.12, 1.22), (0.32, 0.27, 1.15))):
-        k.tube([(0.3, 0, 1.42), (0.38, 0.12, 1.22), (0.33, 0.24, 1.16)], 0.075, 0.06, J, sides=6)
-        k.ico((0.32, 0.27, 1.15), 0.058, SKIN, subdiv=1, rough=0.05)
-    # Collar, then the neck and head: eyes, nose, ears, hair.
-    k.tube([(0.1 * math.cos(a), 0.08 * math.sin(a) + 0.01, 1.51) for a in [j / 10 * math.tau for j in range(11)]], 0.025, 0.025, region('A', 0.9), sides=4, cap=False)
-    with k.limb(5, lambda co: 0.0):
-        k.cyl((0, 0, 1.49), (0, 0, 1.57), 0.065, 0.065, SKIN, sides=8)
-        k.ico((0, 0.01, 1.67), (0.145, 0.145, 0.165), SKIN, subdiv=2, rough=0.02)
-        k.ico((0, 0.155, 1.655), (0.028, 0.04, 0.034), shade(SKIN, 0.9), subdiv=1, rough=0)
-        for x in (-0.055, 0.055):
-            k.ico((x, 0.135, 1.705), 0.021, EYE, subdiv=1, rough=0)
-            k.box((x, 0.13, 1.745), (0.05, 0.012, 0.012), hexc('#5b3a1e'))
-        for x in (-0.145, 0.145):
-            k.ico((x, 0, 1.67), (0.025, 0.035, 0.04), shade(SKIN, 0.95), subdiv=1, rough=0)
-        k.ico((0, -0.035, 1.71), (0.15, 0.13, 0.13), hexc('#5b3a1e'), subdiv=1, rough=0.05)
-    return k.build('angler_0', ao=0.12)
+            faces = k.tube_r([(x, 0, 0.93), (x * 1.02, 0.012, 0.7), (x * 1.02, 0.015, 0.5), (x * 1.04, 0.005, 0.3), (x * 1.05, 0, bottom)],
+                             [r[0], r[0] * 0.95, r[1], r[1] * 0.97, r[2]], colour, sides=9)
+            if stripe:
+                for f in faces:
+                    c = f.calc_center_median()
+                    if abs(c.x - x * 1.03) > r[1] * 0.7 and (c.x - x) * x > 0:
+                        k.paint([f], stripe, 0.02)
+            if knees:
+                k.ico((x * 1.02, 0.08, 0.5), (0.075, 0.05, 0.08), knees, subdiv=1, rough=0.05)
+    if pelvis:
+        k.vloft([(0.8, 0.19, 0.13, 0.0), (0.88, 0.215, 0.15, 0.0), (1.0, 0.21, 0.148, 0.0)], colour, sides=16)
+    if belt:
+        pts = [(0.218 * math.cos(a), 0.155 * math.sin(a), 0.985) for a in [j / 16 * math.tau for j in range(17)]]
+        k.tube(pts, 0.025, 0.025, belt, sides=4, cap=False)
+        k.box((0, 0.158, 0.985), (0.07, 0.02, 0.055), hexc('#c9a227'))
 
-HATS = ['bucket', 'souwester', 'straw', 'cap', 'captain', 'beanie', 'tricorn', 'crown', 'helm', 'halo']
+def boots(k, colour, height=0.26, top_r=0.1, sole=None, toe=None, cuff=None, style='boot', trim=None):
+    """A pair of boots (each moving with its leg's shin)."""
+    sole = sole or shade(colour, 0.55)
+    for limb, x in ((1, -0.12), (2, 0.12)):
+        xx = x * 1.05
+        with k.limb(limb, leg_t):
+            big = 1.25 if style == 'diving' else 1.0
+            k.box((xx, 0.05, 0.022), (0.13 * big, 0.31 * big, 0.044), sole)
+            k.ico((xx, 0.065, 0.085), (0.072 * big, 0.155 * big, 0.068 * big), colour, subdiv=2, rough=0.02)
+            if style == 'pointed':
+                k.cyl((xx, 0.18, 0.06), (xx, 0.3, 0.05), 0.045, 0.0, colour, sides=6)
+            k.tube_r([(xx, 0, 0.05), (xx, 0, height * 0.6), (xx, 0, height)], [0.085 * big, 0.09 * big, top_r * big], colour, sides=9)
+            if cuff:
+                k.tube_r([(xx, 0, height - 0.02), (xx, 0, height + 0.07)], [top_r * big + 0.02, top_r * big + 0.03], cuff, sides=9)
+            if toe:
+                k.ico((xx, 0.15 * big, 0.08), (0.07 * big, 0.06 * big, 0.055 * big), toe, subdiv=1, rough=0)
+            if style == 'laced':
+                for z in (0.12, 0.16, 0.2):
+                    k.box((xx, 0.085, z), (0.07, 0.015, 0.012), trim or hexc('#e9dcc0'))
+            if style == 'sneaker':
+                k.box((xx, 0.05, 0.05), (0.135, 0.3, 0.02), trim or hexc('#e63946'))
+            if style == 'hobnail':
+                for j in range(6):
+                    k.ico((xx + 0.065 * (1 if j % 2 else -1), -0.08 + j * 0.05, 0.02), 0.012, hexc('#c0c7cf'), subdiv=1, rough=0)
+            if trim and style not in ('laced', 'sneaker'):
+                k.tube_r([(xx, 0, height - 0.035), (xx, 0, height - 0.005)], [top_r + 0.008, top_r + 0.008], trim, sides=9)
 
-def hat(i):
-    """The hats from the armour sets' looks, in place on an angler's head. Regions: D hat, E trim."""
-    name = HATS[i]
-    k = Kit(90 + i)
-    H, T = region('D'), region('E')
-    z = 1.76
-    if name == 'bucket':
-        k.cyl((0, 0, z - 0.01), (0, 0, z + 0.03), 0.27, 0.22, H, sides=12)
-        k.cyl((0, 0, z + 0.02), (0, 0, z + 0.16), 0.18, 0.15, H, sides=12)
-        k.cyl((0, 0, z + 0.03), (0, 0, z + 0.06), 0.183, 0.18, T, sides=12)
-    elif name == 'souwester':
-        k.cyl((0, -0.03, z - 0.04), (0, -0.03, z + 0.02), 0.32, 0.22, H, sides=12)
-        k.ico((0, 0, z + 0.06), (0.17, 0.17, 0.13), H, subdiv=1, rough=0.02)
-    elif name == 'straw':
-        k.cyl((0, 0, z), (0, 0, z + 0.025), 0.4, 0.37, H, sides=14)
-        k.cyl((0, 0, z + 0.02), (0, 0, z + 0.17), 0.17, 0.12, H, sides=12)
-        k.cyl((0, 0, z + 0.03), (0, 0, z + 0.07), 0.172, 0.16, T, sides=12)
-    elif name in ('cap', 'captain'):
-        if name == 'captain':
-            k.cyl((0, 0, z), (0, 0, z + 0.13), 0.165, 0.19, H, sides=12)
-            k.cyl((0, 0, z + 0.13), (0, 0, z + 0.15), 0.19, 0.19, H, sides=12)
-            k.box((0, 0.17, z + 0.075), (0.06, 0.02, 0.05), T)
+def collar(k, colour, z=1.5, r=(0.12, 0.1), height=0.06, flare=0.02):
+    k.vloft([(z - 0.01, r[0], r[1], 0.0), (z + height, r[0] + flare, r[1] + flare, 0.0)], colour, sides=14, bottom=False, top=False)
+
+def buttons(k, colour, xs, zs, y=0.168, r=0.014):
+    for x in xs:
+        for z in zs:
+            k.ico((x, y + 0.004 * (1 - (z - 1.0)), z), r, colour, subdiv=1, rough=0)
+
+def cape(k, colour, lining, bottom=0.45, width=0.36, trim=None):
+    """A cape from the shoulders, hanging behind (it stays with the body)."""
+    pts_top = [(-width * 0.8, -0.13, 1.45), (width * 0.8, -0.13, 1.45)]
+    pts_bot = [(width * 1.1, -0.3, bottom), (-width * 1.1, -0.3, bottom)]
+    k.fin(pts_top + pts_bot, 0.02, colour)
+    if trim:
+        k.tube([(-width * 1.1, -0.3, bottom), (width * 1.1, -0.3, bottom)], 0.018, 0.018, trim, sides=4)
+    for x in (-1, 1):
+        k.ico((x * width * 0.8, -0.1, 1.45), 0.035, trim or lining, subdiv=1, rough=0)
+
+def stars(k, count, area, colour, r=0.012, seed=0):
+    """Little bright studs scattered over an area: [(x0, x1), (y0, y1), (z0, z1)] (stars on a robe, gems)."""
+    rnd = random.Random(seed)
+    for _ in range(count):
+        k.ico((rnd.uniform(*area[0]), rnd.uniform(*area[1]), rnd.uniform(*area[2])), r * rnd.uniform(0.7, 1.3), colour, subdiv=1, rough=0)
+
+def angler(i):
+    """The angler underneath the armour: head and face, hair and beard, neck and hands (the clothes are gear_*)."""
+    k = Kit(80)
+    with k.limb(5, head_t):
+        k.cyl((0, 0, 1.48), (0, 0.005, 1.58), 0.07, 0.068, SKIN, sides=10)
+        # The head: a skull and a jaw, melted into one.
+        k.blob([((0, 0.0, 1.69), (0.135, 0.14, 0.15), SKIN, 2, 0.02, 1.0), ((0, 0.035, 1.6), (0.105, 0.105, 0.075), SKIN, 2, 0.02, 1.0)],
+               0.022, 0.3, lambda f: SKIN if f.normal.z > -0.6 else SKIN_DARK)
+        k.ico((0, 0.15, 1.665), (0.026, 0.04, 0.036), shade(SKIN, 0.92), subdiv=1, rough=0)  # nose
+        k.ico((0, 0.163, 1.65), (0.022, 0.02, 0.016), shade(SKIN, 0.88), subdiv=1, rough=0)
+        for x in (-0.05, 0.05):
+            k.ico((x, 0.127, 1.705), (0.024, 0.012, 0.016), hexc('#f8f9fa'), subdiv=1, rough=0)  # eyes
+            k.ico((x, 0.136, 1.705), 0.011, hexc('#3d6b8a'), subdiv=1, rough=0)
+            k.ico((x, 0.141, 1.705), 0.006, EYE, subdiv=1, rough=0)
+            k.box((x, 0.13, 1.735), (0.055, 0.016, 0.014), HAIR)  # eyebrows
+        for x in (-0.14, 0.14):
+            k.ico((x, 0.0, 1.68), (0.02, 0.035, 0.045), shade(SKIN, 0.94), subdiv=1, rough=0)  # ears
+        # Hair, a short beard and a moustache.
+        k.blob([((0, -0.025, 1.745), (0.152, 0.15, 0.105), HAIR, 2, 0.08, 2.0), ((0, -0.075, 1.66), (0.145, 0.09, 0.085), HAIR, 1, 0.08, 2.0),
+                ((0, 0.07, 1.8), (0.11, 0.06, 0.04), HAIR, 1, 0.1, 2.0)],
+               0.025, 0.3, lambda f: shade(HAIR, 1.1) if f.normal.z > 0.5 else HAIR)
+        k.blob([((0, 0.09, 1.585), (0.105, 0.075, 0.05), HAIR, 1, 0.12, 2.0), ((0.09, 0.05, 1.62), (0.03, 0.05, 0.05), HAIR, 1, 0.1, 2.0),
+                ((-0.09, 0.05, 1.62), (0.03, 0.05, 0.05), HAIR, 1, 0.1, 2.0)], 0.02, 0.35, lambda f: HAIR)
+        k.ico((0, 0.152, 1.625), (0.05, 0.018, 0.014), shade(HAIR, 0.9), subdiv=1, rough=0.05)  # moustache
+        k.box((0, 0.15, 1.61), (0.04, 0.01, 0.008), hexc('#8a3a3a'))  # mouth
+    # Hands: the right one gripping (the rod goes through it), the left relaxed.
+    for side in (-1, 1):
+        h = Vector(HAND[side])
+        with k.limb(4 if side > 0 else 3, lambda co: 1.0):
+            if side > 0:
+                k.ico(h, (0.05, 0.055, 0.05), SKIN, subdiv=2, rough=0.03)
+                for j in range(4):
+                    k.ico(h + Vector((-0.035, 0.01 + j * 0.0, 0.03 - j * 0.02)), (0.022, 0.03, 0.012), shade(SKIN, 0.95), subdiv=1, rough=0)
+                k.ico(h + Vector((0.0, 0.03, 0.04)), (0.016, 0.03, 0.014), shade(SKIN, 0.95), subdiv=1, rough=0)  # thumb on top
+            else:
+                k.ico(h, (0.04, 0.05, 0.06), SKIN, subdiv=2, rough=0.03)
+                k.ico(h + Vector((0, 0.01, -0.06)), (0.035, 0.04, 0.03), shade(SKIN, 0.95), subdiv=1, rough=0)
+                k.ico(h + Vector((0.025, 0.04, -0.01)), (0.014, 0.02, 0.03), shade(SKIN, 0.95), subdiv=1, rough=0)
+    return k.build('angler_0', ao=0.0)
+
+# ---- armour ------------------------------------------------------------------------------------------------------
+# Every armour piece in the game (shared/armour.js, through GameData.json), modelled in its set's colours and
+# style, to go on the angler above: gear_<slot>_<set> for the slots head, body, legs and feet, and
+# gear_<slot>_default for what you wear with nothing in a slot (a shirt in your colour, jeans, trainers).
+# The game puts together whatever four you're wearing (Net/RemoteAngler.cs AnglerMesh).
+
+def set_looks():
+    import json
+    path = os.path.join(HERE, '..', 'unity-src', 'Assets', 'LastCast', 'Resources', 'GameData.json')
+    with open(path, encoding='utf-8') as f:
+        data = json.load(f)
+    return {s['id']: s['look'] for s in data['sets']}
+
+LOOKS = set_looks()
+GEAR_SETS = ['default'] + list(LOOKS)
+GEAR = [(slot, s) for s in GEAR_SETS for slot in ('head', 'body', 'legs', 'feet') if not (s == 'default' and slot == 'head')]
+
+def look(set_id):
+    lk = LOOKS[set_id]
+    c = lambda key, d: hexc(lk[key]) if key in lk else d
+    jacket, boot, hat = c('jacket', hexc('#888888')), c('boots', hexc('#333333')), c('hatColor', hexc('#888888'))
+    return dict(jacket=jacket, boots=boot, hat=hat, trim=c('trim', shade(hat, 1.2)), glow=c('glow', None), dark=shade(jacket, 0.65))
+
+def gear_head(s):
+    L = look(s)
+    k = Kit(1000 + GEAR_SETS.index(s))
+    H, T, z = L['hat'], L['trim'], 1.76
+    with k.limb(5, head_t):
+        if s == 'canvas':  # bucket hat, with a band and flies pinned to it
+            k.vloft([(z - 0.02, 0.27, 0.27, 0.0), (z + 0.01, 0.25, 0.25, 0.0), (z + 0.02, 0.18, 0.18, 0.0), (z + 0.15, 0.16, 0.16, 0.0), (z + 0.17, 0.12, 0.12, 0.0)], H, sides=16)
+            k.vloft([(z + 0.02, 0.183, 0.183, 0.0), (z + 0.06, 0.177, 0.177, 0.0)], shade(H, 0.7), sides=16, bottom=False, top=False)
+            for a, col in ((0.6, '#e63946'), (1.2, '#2a9d8f'), (2.2, '#f4a261')):
+                p = Vector((math.cos(a) * 0.185, math.sin(a) * 0.185, z + 0.045))
+                k.ico(p, 0.016, hexc(col), subdiv=1, rough=0.3)
+                k.cyl(p, p + Vector((0, 0, -0.04)), 0.003, 0.003, hexc('#c0c7cf'), sides=3)
+        elif s in ('oilskin',):  # sou'wester: brim sloping long at the back, a chin strap
+            k.vloft([(z - 0.06, 0.25, 0.3, -0.06), (z - 0.02, 0.2, 0.22, -0.02), (z + 0.04, 0.17, 0.17, 0.0), (z + 0.12, 0.15, 0.15, 0.0), (z + 0.15, 0.08, 0.08, 0.0)], H, sides=16)
+            for x in (-1, 1):
+                k.tube([(x * 0.15, 0.0, z - 0.02), (x * 0.13, 0.06, 1.6), (0, 0.11, 1.55)], 0.006, 0.006, shade(H, 0.7), sides=3, cap=False)
+        elif s == 'reedwalker':  # wide conical reed hat with tufts poking out
+            k.vloft([(z - 0.01, 0.34, 0.34, 0.0), (z + 0.02, 0.3, 0.3, 0.0), (z + 0.16, 0.06, 0.06, 0.0), (z + 0.19, 0.01, 0.01, 0.0)],
+                    lambda c, n: H if int((math.atan2(c.y, c.x) + 4) * 5) % 2 else shade(H, 0.85), sides=20)
+            for j in range(9):
+                a = j / 9 * math.tau
+                p = Vector((math.cos(a) * 0.3, math.sin(a) * 0.3, z))
+                k.tube([p, p + Vector((math.cos(a) * 0.06, math.sin(a) * 0.06, -0.05 + 0.02 * (j % 3)))], 0.006, 0.002, hexc('#c2b27a'), sides=3)
+        elif s == 'clover':  # baseball cap with a four-leaf clover on the front
+            k.vloft([(z - 0.03, 0.172, 0.175, 0.0), (z + 0.06, 0.16, 0.165, 0.0), (z + 0.11, 0.1, 0.1, 0.0), (z + 0.125, 0.02, 0.02, 0.0)], H, sides=16)
+            k.box((0, 0.21, z - 0.02), (0.22, 0.14, 0.02), shade(H, 0.8))
+            k.ico((0, 0, z + 0.13), 0.018, T, subdiv=1, rough=0)
+            for a in range(4):
+                ang = a * math.pi / 2 + math.pi / 4
+                k.ico((math.cos(ang) * 0.017, 0.17, z + 0.05 + math.sin(ang) * 0.017), (0.016, 0.006, 0.016), hexc('#b7f5c5'), subdiv=1, rough=0)
+        elif s == 'seadog':  # captain's cap: white crown, black peak, gold badge and cord
+            k.vloft([(z - 0.03, 0.17, 0.172, 0.0), (z + 0.06, 0.17, 0.175, 0.0), (z + 0.1, 0.2, 0.21, 0.01), (z + 0.13, 0.2, 0.21, 0.01)],
+                    lambda c, n: hexc('#f1f1f1') if c.z > z + 0.075 else H, sides=18)
+            k.box((0, 0.2, z - 0.015), (0.24, 0.13, 0.02), hexc('#111111'))
+            k.ico((0, 0.178, z + 0.045), (0.03, 0.01, 0.025), hexc('#ffd166'), subdiv=1, rough=0)
+            k.tube([(-0.16, 0.08, z + 0.005), (0, 0.183, z + 0.01), (0.16, 0.08, z + 0.005)], 0.006, 0.006, hexc('#ffd166'), sides=4)
+        elif s == 'trophy':  # wide-brimmed hunter's hat with a feather and badges
+            k.vloft([(z - 0.02, 0.32, 0.32, 0.0), (z + 0.01, 0.3, 0.3, 0.0), (z + 0.02, 0.18, 0.18, 0.0), (z + 0.16, 0.16, 0.15, 0.0), (z + 0.18, 0.1, 0.09, 0.0)], H, sides=16)
+            k.vloft([(z + 0.02, 0.183, 0.183, 0.0), (z + 0.055, 0.178, 0.178, 0.0)], hexc('#3b2410'), sides=16, bottom=False, top=False)
+            k.fin([(0.16, -0.03, z + 0.05), (0.2, -0.12, z + 0.25), (0.19, -0.05, z + 0.07)], 0.006, hexc('#c1121f'))
+            k.ico((-0.12, 0.13, z + 0.06), 0.018, hexc('#ffd166'), subdiv=1, rough=0)
+        elif s == 'storm':  # a hood up over the head, drawstring and a cyan lining
+            hood = k.vloft([(1.55, 0.17, 0.17, -0.02), (1.65, 0.19, 0.19, -0.03), (1.75, 0.185, 0.19, -0.03), (1.84, 0.14, 0.15, -0.03), (1.88, 0.06, 0.07, -0.03)],
+                    lambda c, n: L['jacket'] if n.y < 0.6 or c.z > 1.82 else T, sides=18)
+            k.cut(hood, lambda f: f.normal.y > 0.5 and 1.56 < f.calc_center_median().z < 1.8)  # open at the face
+            k.tube([(0.19 * math.cos(a), 0.13 + 0.05 * math.sin(a), 1.69 + 0.17 * math.sin(a)) for a in [j / 12 * math.pi - math.pi / 2 for j in range(13)]], 0.018, 0.018, H, sides=5, cap=False)
+            for x in (-0.05, 0.05):
+                k.tube([(x, 0.17, 1.56), (x, 0.18, 1.48)], 0.005, 0.005, hexc('#f1f1f1'), sides=3)
+        elif s == 'mariner':  # tricorn with gold edging and a cockade
+            k.cyl((0, 0, z - 0.01), (0, 0, z + 0.14), 0.36, 0.13, H, sides=3)
+            k.cyl((0, 0, z + 0.02), (0, 0, z + 0.06), 0.33, 0.3, T, sides=3)
+            k.ico((0.16, 0.12, z + 0.08), (0.04, 0.02, 0.04), hexc('#f1f1f1'), subdiv=1, rough=0.1)
+            k.fin([(-0.1, -0.1, z + 0.12), (-0.25, -0.25, z + 0.3), (-0.05, -0.15, z + 0.1)], 0.006, hexc('#f1f1f1'))
+        elif s in ('legend', 'golden', 'emberforged'):  # crowns
+            pts = 10 if s == 'golden' else 7
+            base = [(z - 0.01, 0.17, 0.17, 0.0), (z + 0.06, 0.18, 0.18, 0.0)]
+            k.vloft(base, H, sides=pts * 2, bottom=False, top=s != 'legend')
+            for j in range(pts):
+                a = j / pts * math.tau
+                p = Vector((math.cos(a) * 0.178, math.sin(a) * 0.178, z + 0.05))
+                tall = 0.18 if s == 'emberforged' and j % 2 == 0 else 0.11
+                if s == 'emberforged':
+                    k.cyl(p, p + Vector((math.cos(a) * 0.03, math.sin(a) * 0.03, tall)), 0.035, 0.0, H, sides=4)
+                    k.cyl(p + Vector((0, 0, tall * 0.4)), p + Vector((math.cos(a) * 0.04, math.sin(a) * 0.04, tall * 1.15)), 0.02, 0.0, T, sides=4)
+                elif s == 'legend':
+                    if j == 0:
+                        continue
+                else:
+                    k.cyl(p, p + Vector((0, 0, tall)), 0.03, 0.0, H, sides=4)
+                    k.ico(p + Vector((0, 0, tall)), 0.014, T, subdiv=1, rough=0)
+            gem = hexc('#e63946') if s == 'golden' else (L['glow'] or T)
+            k.ico((0, 0.185, z + 0.03), (0.035, 0.015, 0.035), gem, subdiv=1, rough=0)
+            if s == 'legend':  # a circlet rising to a point at the front, a gem on it
+                k.cyl((0, 0.18, z + 0.04), (0, 0.19, z + 0.13), 0.035, 0.0, H, sides=4)
+                k.ico((0, 0.19, z + 0.075), 0.02, L['glow'], subdiv=1, rough=0)
+        elif s == 'abyssal':  # the brass diving helmet: a sphere with portholes and bolts, on a collar
+            brass, glass = H, hexc('#7fc8d8')
+            k.vloft([(1.47, 0.2, 0.17, 0.0), (1.52, 0.22, 0.2, 0.0)], shade(brass, 0.85), sides=16, bottom=False)
+            k.ico((0, 0.01, 1.7), (0.2, 0.2, 0.21), brass, subdiv=3, rough=0.0)
+            k.cyl((0, 0.17, 1.69), (0, 0.215, 1.69), 0.1, 0.1, shade(brass, 0.8), sides=14)
+            k.cyl((0, 0.212, 1.69), (0, 0.222, 1.69), 0.085, 0.085, glass, sides=14)
+            for x in (-1, 1):
+                k.cyl((x * 0.17, 0.0, 1.7), (x * 0.215, 0.0, 1.7), 0.06, 0.06, shade(brass, 0.8), sides=12)
+                k.cyl((x * 0.212, 0.0, 1.7), (x * 0.22, 0.0, 1.7), 0.048, 0.048, glass, sides=12)
+            for j in range(10):
+                a = j / 10 * math.tau
+                k.ico((math.cos(a) * 0.215, math.sin(a) * 0.2, 1.5), 0.013, hexc('#e9dcc0'), subdiv=1, rough=0)
+            k.cyl((0, -0.12, 1.86), (0, -0.16, 1.92), 0.03, 0.025, shade(brass, 0.8), sides=8)
+        elif s == 'tidecaller':  # a hood with a fin-like crest and a shell clasp
+            hood = k.vloft([(1.55, 0.17, 0.17, -0.02), (1.65, 0.19, 0.19, -0.03), (1.76, 0.185, 0.19, -0.03), (1.85, 0.14, 0.15, -0.03), (1.88, 0.05, 0.06, -0.03)],
+                    lambda c, n: L['jacket'] if n.y < 0.6 or c.z > 1.82 else T, sides=18)
+            k.cut(hood, lambda f: f.normal.y > 0.5 and 1.56 < f.calc_center_median().z < 1.8)  # open at the face
+            k.fin([(0, 0.08, 1.86), (0, -0.05, 2.02), (0, -0.25, 1.92), (0, -0.2, 1.8)], 0.012, H)
+            for j in range(4):
+                k.box((0, -0.05 - j * 0.05, 1.93 - j * 0.02), (0.014, 0.008, 0.08), shade(H, 1.2))
+            k.ico((0, 0.17, 1.52), (0.04, 0.02, 0.035), hexc('#f7d6c7'), subdiv=1, rough=0.15)
+        elif s in ('celestial', 'mythweaver'):  # a floating halo (a star on it, or a second ring of runes)
+            pts = [(0.19 * math.cos(a), -0.02 + 0.19 * math.sin(a), 1.98) for a in [j / 24 * math.tau for j in range(25)]]
+            k.tube(pts, 0.018, 0.018, H, sides=6, cap=False)
+            if s == 'celestial':
+                k.fin([(0.05 * math.cos(a), 0.17, 1.98 + 0.05 * math.sin(a)) if j % 2 == 0 else (0.022 * math.cos(a), 0.17, 1.98 + 0.022 * math.sin(a))
+                       for j, a in enumerate([j / 10 * math.tau + math.pi / 2 for j in range(10)])], 0.012, hexc('#fff3b0'))
+            else:
+                pts2 = [(0.13 * math.cos(a), -0.02 + 0.13 * math.sin(a), 2.03) for a in [j / 18 * math.tau for j in range(19)]]
+                k.tube(pts2, 0.01, 0.01, T, sides=5, cap=False)
+                for j in range(6):
+                    a = j / 6 * math.tau
+                    k.box((0.19 * math.cos(a), -0.02 + 0.19 * math.sin(a), 1.98), (0.03, 0.03, 0.03), hexc('#ffffff'))
         else:
-            k.ico((0, 0, z + 0.02), (0.165, 0.17, 0.11), H, subdiv=1, rough=0)
-            k.ico((0, 0, z + 0.125), 0.02, T, subdiv=1, rough=0)
-        k.box((0, 0.2, z + 0.01), (0.26, 0.15, 0.025), hexc('#1b1b1b') if name == 'captain' else H)
-    elif name == 'beanie':
-        k.ico((0, 0, z + 0.02), (0.165, 0.165, 0.15), H, subdiv=2, rough=0.03)
-        k.cyl((0, 0, z - 0.02), (0, 0, z + 0.05), 0.172, 0.17, region('D', 0.85), sides=12)
-        k.ico((0, 0, z + 0.18), 0.05, T, subdiv=1, rough=0.2)
-    elif name == 'tricorn':
-        k.cyl((0, 0, z), (0, 0, z + 0.13), 0.33, 0.12, H, sides=3)
-        k.cyl((0, 0, z + 0.07), (0, 0, z + 0.09), 0.25, 0.2, T, sides=3)
-    elif name == 'crown':
-        k.cyl((0, 0, z), (0, 0, z + 0.1), 0.17, 0.19, H, sides=10)
-        for j in range(5):
-            a = j / 5 * math.tau
-            p = Vector((math.cos(a) * 0.175, math.sin(a) * 0.175, z + 0.09))
-            k.cyl(p, p + Vector((0, 0, 0.11)), 0.035, 0.0, H, sides=4)
-            k.ico(Vector((math.cos(a + 0.6) * 0.185, math.sin(a + 0.6) * 0.185, z + 0.05)), 0.022, T, subdiv=1, rough=0)
-    elif name == 'helm':
-        k.ico((0, 0, z - 0.04), (0.2, 0.2, 0.2), H, subdiv=2, rough=0.01)
-        k.box((0, 0.17, z - 0.06), (0.17, 0.05, 0.12), hexc('#78c8dc'))
-        k.cyl((0, 0, z + 0.14), (0, -0.05, z + 0.26), 0.03, 0.06, T, sides=6)
-    else:  # halo
-        pts = [(0.19 * math.cos(a), 0.19 * math.sin(a), z + 0.2) for a in [j / 16 * math.tau for j in range(17)]]
-        k.tube(pts, 0.025, 0.025, H, sides=5, cap=False)
-    return k.build(f'hat_{name}', ao=0)
+            k.vloft([(z - 0.02, 0.27, 0.27, 0.0), (z + 0.02, 0.18, 0.18, 0.0), (z + 0.16, 0.15, 0.15, 0.0)], H, sides=14)
+    return k.build(f'gear_head_{s}', ao=0.0)
+
+def gear_body(s):
+    k = Kit(1100 + GEAR_SETS.index(s))
+    if s == 'default':  # a plain shirt in your own colour (region A), sleeves rolled
+        A = region('A')
+        torso(k, lambda c, n: region('A', 0.85) if c.z < 0.9 else A)
+        collar(k, region('A', 0.9), r=(0.11, 0.095), height=0.04)
+        buttons(k, hexc('#f1f1f1'), [0], [1.1, 1.22, 1.34])
+        for side in (-1, 1):
+            sleeve(k, side, A, cuff=region('A', 0.85), cuff_r=0.075, upto=0.55)
+            with k.limb(4 if side > 0 else 3, arm_t(side)):  # bare forearms
+                e, w = Vector(ARM[side][1]), Vector(ARM[side][2])
+                k.tube_r([e.lerp(w, 0.5), w], [0.058, 0.052], SKIN, sides=7)
+        return k.build('gear_body_default', ao=0.1)
+    L = look(s)
+    J, D, T, G = L['jacket'], L['dark'], L['trim'], L['glow']
+    shirt = hexc('#e9e4d8')
+    if s == 'canvas':  # canvas work jacket: chest flap pockets, a zip, a corduroy collar
+        torso(k, lambda c, n: D if c.z < 0.9 else J, bulk=0.06)
+        collar(k, hexc('#5b3a1e'), height=0.07, flare=0.04)
+        k.box((0, 0.17, 1.17), (0.02, 0.012, 0.6), shade(J, 0.6))
+        for x in (-0.11, 0.11):
+            k.box((x, 0.175, 1.26), (0.11, 0.015, 0.11), shade(J, 0.9))
+            k.box((x, 0.18, 1.31), (0.115, 0.02, 0.035), shade(J, 0.75))
+        for side in (-1, 1):
+            sleeve(k, side, J, cuff=D)
+    elif s == 'oilskin':  # a long yellow oilskin coat to the thigh, toggles down the front, a high collar
+        torso(k, lambda c, n: shade(J, 0.85) if abs(c.x) < 0.02 and n.y > 0.5 else J, bulk=0.1, skirt=0.55, flare=0.06)
+        collar(k, J, height=0.11, flare=0.03)
+        for z in (0.75, 0.95, 1.1, 1.25, 1.38):
+            k.box((0.0, 0.19, z), (0.06, 0.02, 0.018), hexc('#2b2d42'))
+        for side in (-1, 1):
+            sleeve(k, side, J, r0=0.095, r1=0.08, cuff=shade(J, 0.85), cuff_r=0.085)
+    elif s == 'reedwalker':  # camouflage smock, the hood down on the back, reed tufts on the shoulders
+        rnd = random.Random(7)
+        off = Vector((rnd.random() * 9, rnd.random() * 9, rnd.random() * 9))
+        camo = lambda c, n: (D if noise.noise(c * 9 + off) > 0.2 else hexc('#8a8f4a') if noise.noise(c * 13 + off) > 0.25 else J)
+        torso(k, camo, bulk=0.07, skirt=0.75, flare=0.03)
+        k.blob([((0, -0.17, 1.47), (0.15, 0.06, 0.08), J, 1, 0.1, 2.0)], 0.03, 0.35, lambda f: camo(f.calc_center_median(), f.normal))  # the hood, down
+        for side in (-1, 1):
+            sleeve(k, side, J, cuff=D)
+            for j in range(5):
+                p = Vector((side * (0.22 + j * 0.02), -0.02 + j * 0.02, 1.47))
+                k.tube([p, p + Vector((side * 0.03, 0.01 * j, 0.08 + 0.02 * (j % 2)))], 0.006, 0.002, hexc('#9fae5a'), sides=3)
+    elif s == 'clover':  # a padded vest over a white shirt, a clover badge and pockets
+        torso(k, lambda c, n: shirt if abs(c.x) < 0.035 and n.y > 0.4 and c.z > 1.0 else J, bulk=0.08)
+        collar(k, shirt, height=0.05)
+        for z in (1.0, 1.12, 1.24, 1.36):
+            k.box((0, 0.19, z), (0.42, 0.01, 0.012), shade(J, 0.85))  # quilting
+        for x in (-0.13, 0.13):
+            k.box((x, 0.19, 1.05), (0.1, 0.015, 0.08), shade(J, 0.8))
+        for a in range(4):
+            ang = a * math.pi / 2 + math.pi / 4
+            k.ico((0.13 + math.cos(ang) * 0.018, 0.195, 1.3 + math.sin(ang) * 0.018), (0.017, 0.006, 0.017), hexc('#b7f5c5'), subdiv=1, rough=0)
+        for side in (-1, 1):
+            sleeve(k, side, shirt, r0=0.075, cuff=hexc('#d9d4c8'))
+            k.ico((side * 0.27, 0, 1.4), (0.07, 0.08, 0.06), J, subdiv=1, rough=0.02)  # the vest's shoulders
+    elif s == 'seadog':  # a double-breasted navy pea coat: brass buttons, broad lapels, to the hip
+        torso(k, J, bulk=0.1, skirt=0.72, flare=0.02)
+        collar(k, J, height=0.1, flare=0.06)
+        k.fin([(-0.04, 0.2, 1.42), (-0.17, 0.19, 1.47), (-0.1, 0.19, 1.25)], 0.012, shade(J, 0.85))
+        k.fin([(0.04, 0.2, 1.42), (0.17, 0.19, 1.47), (0.1, 0.19, 1.25)], 0.012, shade(J, 0.85))
+        buttons(k, hexc('#c9a227'), [-0.07, 0.07], [0.88, 1.02, 1.16], y=0.19, r=0.016)
+        for side in (-1, 1):
+            sleeve(k, side, J, r0=0.09, cuff=shade(J, 0.85))
+    elif s == 'trophy':  # a leather hunting vest full of pockets over a red check shirt, a gold fish badge
+        check = lambda c, n: hexc('#a4161a') if (int(c.x * 30 + 50) + int(c.z * 30)) % 2 else hexc('#3a0d0d')
+        torso(k, lambda c, n: check(c, n) if abs(c.x) < 0.05 and n.y > 0.4 and c.z > 1.0 else J, bulk=0.08)
+        collar(k, hexc('#a4161a'), height=0.05)
+        for x in (-0.13, 0.13):
+            for z in (1.0, 1.18, 1.33):
+                k.box((x, 0.19, z), (0.09, 0.02, 0.07), shade(J, 0.8))
+        k.fin([(0.09, 0.2, 1.38), (0.15, 0.2, 1.4), (0.14, 0.2, 1.35)], 0.01, hexc('#ffd166'))
+        for side in (-1, 1):
+            sleeve(k, side, hexc('#a4161a'), r0=0.078, cuff=hexc('#3a0d0d'))
+            with k.limb(4 if side > 0 else 3, arm_t(side)):  # check on the sleeves
+                a, e = Vector(ARM[side][0]), Vector(ARM[side][1])
+                for j in range(3):
+                    p = a.lerp(e, 0.25 + j * 0.25)
+                    k.tube_r([p + Vector((0, 0, 0.01)), p - Vector((0, 0, 0.01))], [0.087, 0.087], hexc('#3a0d0d'), sides=8, cap=False)
+            k.ico((side * 0.27, 0, 1.4), (0.075, 0.08, 0.06), J, subdiv=1, rough=0.02)
+    elif s == 'storm':  # a technical storm shell: high collar, cyan reflective bands, a cinched waist
+        torso(k, lambda c, n: T if 1.2 < c.z < 1.24 else J, bulk=0.1, skirt=0.78, flare=0.03)
+        collar(k, J, height=0.13, flare=0.01)
+        k.box((0.04, 0.19, 1.15), (0.015, 0.012, 0.62), hexc('#1b1b1b'))
+        k.vloft([(0.93, 0.25, 0.185, 0.0), (0.97, 0.245, 0.18, 0.0)], shade(J, 0.7), sides=16, bottom=False, top=False)
+        for side in (-1, 1):
+            sleeve(k, side, J, r0=0.095, r1=0.075, cuff=T, cuff_r=0.08)
+    elif s == 'mariner':  # a long greatcoat open over a waistcoat: gold buttons, epaulettes with fringes, deep cuffs
+        torso(k, lambda c, n: hexc('#f1e3c8') if abs(c.x) < 0.07 and n.y > 0.5 and c.z > 0.9 else J, bulk=0.09, skirt=0.42, flare=0.1)
+        collar(k, T, height=0.08, flare=0.05)
+        buttons(k, T, [-0.1, 0.1], [0.95, 1.07, 1.19, 1.31], y=0.19, r=0.016)
+        k.tube([(-0.075, 0.2, 0.45), (-0.075, 0.19, 1.45)], 0.012, 0.012, T, sides=4)
+        k.tube([(0.075, 0.2, 0.45), (0.075, 0.19, 1.45)], 0.012, 0.012, T, sides=4)
+        for side in (-1, 1):
+            sleeve(k, side, J, r0=0.09, cuff=T, cuff_r=0.095)
+            with k.limb(4 if side > 0 else 3, lambda co: 0.0):  # epaulettes
+                k.ico((side * 0.31, 0, 1.47), (0.08, 0.09, 0.025), T, subdiv=1, rough=0)
+                for j in range(7):
+                    k.cyl((side * (0.31 + 0.07 * math.cos(j / 6 * math.pi - math.pi / 2)), 0.07 * math.sin(j / 6 * math.pi - math.pi / 2), 1.46),
+                          (side * (0.31 + 0.075 * math.cos(j / 6 * math.pi - math.pi / 2)), 0.075 * math.sin(j / 6 * math.pi - math.pi / 2), 1.4), 0.008, 0.006, T, sides=3)
+    elif s in ('legend', 'mythweaver'):  # a tunic with a fur-trimmed mantle and a cape (runes glowing on the Mythweaver's)
+        torso(k, lambda c, n: T if 0.92 < c.z < 0.97 else J, bulk=0.07, skirt=0.62, flare=0.06)
+        k.vloft([(1.38, 0.3, 0.2, 0.0), (1.46, 0.27, 0.18, 0.0), (1.53, 0.14, 0.12, 0.0)], hexc('#f1e9f7') if s == 'legend' else T, sides=16, bottom=False)
+        cape(k, shade(J, 0.85), D, bottom=0.42, trim=T)
+        if s == 'mythweaver':
+            for j in range(5):
+                k.box((-0.25 + j * 0.12, -0.31, 0.6), (0.05, 0.01, 0.07), G)
+            stars(k, 3, [(-0.35, 0.35), (-0.05, 0.1), (1.55, 1.7)], G, r=0.025, seed=3)  # floating rune-motes
+        else:
+            k.ico((0, 0.2, 1.3), (0.045, 0.02, 0.05), G, subdiv=1, rough=0)
+        for side in (-1, 1):
+            sleeve(k, side, J, r0=0.088, cuff=T, cuff_r=0.085)
+    elif s == 'golden':  # a gilded coat: shining shoulder plates, coin buttons, scrollwork bands
+        torso(k, lambda c, n: T if int(c.z * 12) % 3 == 0 and c.z < 1.4 else J, bulk=0.09, skirt=0.55, flare=0.06)
+        collar(k, T, height=0.09, flare=0.05)
+        buttons(k, hexc('#fff3b0'), [0], [0.75, 0.9, 1.05, 1.2, 1.35], y=0.195, r=0.02)
+        for side in (-1, 1):
+            sleeve(k, side, J, r0=0.09, cuff=T, cuff_r=0.09)
+            with k.limb(4 if side > 0 else 3, lambda co: 0.0):
+                k.ico((side * 0.31, 0, 1.45), (0.12, 0.12, 0.07), hexc('#ffd166'), subdiv=2, rough=0)
+                k.ico((side * 0.34, 0.08, 1.45), 0.02, hexc('#e63946'), subdiv=1, rough=0)
+    elif s == 'abyssal':  # a heavy diving suit: a brass breastplate with bolts, lead weights, an air hose
+        brass = hexc('#c9a227')
+        torso(k, J, bulk=0.14)
+        k.vloft([(1.25, 0.28, 0.2, 0.0), (1.4, 0.3, 0.18, 0.0), (1.48, 0.21, 0.14, 0.0)], brass, sides=16, bottom=True)
+        for j in range(8):
+            a = j / 8 * math.pi
+            k.ico((0.29 * math.cos(a), 0.16 * math.sin(a), 1.4), 0.014, hexc('#e9dcc0'), subdiv=1, rough=0)
+        for y in (0.2, -0.2):
+            k.box((0, y, 1.1), (0.3, 0.06, 0.16), hexc('#495057'))
+        k.tube(curve([(0.12, -0.18, 1.6), (0.25, -0.3, 1.4), (0.2, -0.28, 1.0), (0.1, -0.22, 0.95)], 4), 0.025, 0.025, hexc('#2b2d42'), sides=6)
+        for side in (-1, 1):
+            sleeve(k, side, J, r0=0.1, r1=0.085, cuff=hexc('#3a3a3a'), cuff_r=0.09)
+    elif s == 'tidecaller':  # a flowing robe with a wave-cut hem, fin-like shoulders and shells
+        torso(k, lambda c, n: T if c.z < 0.62 + 0.05 * math.sin(math.atan2(c.y, c.x) * 6) else J, bulk=0.07, skirt=0.5, flare=0.09)
+        collar(k, T, height=0.08, flare=0.03)
+        for side in (-1, 1):
+            sleeve(k, side, J, r0=0.09, r1=0.09, cuff=T, cuff_r=0.11)
+            with k.limb(4 if side > 0 else 3, lambda co: 0.0):
+                k.fin([(side * 0.27, 0.05, 1.47), (side * 0.45, -0.05, 1.58), (side * 0.38, -0.12, 1.4), (side * 0.27, -0.06, 1.38)], 0.015, L['hat'])
+        for z in (1.3, 1.1, 0.9):
+            k.ico((0, 0.2, z), (0.03, 0.015, 0.025), hexc('#f7d6c7'), subdiv=1, rough=0.2)
+    elif s == 'emberforged':  # plate mail: a breastplate with glowing cracks, spiked pauldrons, a mail skirt
+        torso(k, lambda c, n: G if abs(noise.noise(c * 14)) < 0.06 and c.z > 0.95 else (hexc('#5a5a5a') if c.z < 0.95 else J), bulk=0.12, skirt=0.7, flare=0.04)
+        collar(k, hexc('#370617'), height=0.07, flare=0.03)
+        for side in (-1, 1):
+            sleeve(k, side, hexc('#5a5a5a'), r0=0.09, cuff=J, cuff_r=0.095)
+            with k.limb(4 if side > 0 else 3, lambda co: 0.0):
+                k.ico((side * 0.32, 0, 1.45), (0.13, 0.13, 0.09), J, subdiv=2, rough=0.03)
+                for j in range(3):
+                    p = Vector((side * (0.3 + j * 0.04), -0.04 + j * 0.04, 1.52))
+                    k.cyl(p, p + Vector((side * 0.05, 0, 0.1)), 0.025, 0.0, T, sides=4)
+            with k.limb(4 if side > 0 else 3, arm_t(side)):  # gauntlets
+                k.ico(Vector(HAND[side]) + Vector((0, -0.03, 0.01)), (0.065, 0.065, 0.065), J, subdiv=1, rough=0.03)
+    elif s == 'celestial':  # a starweave robe: deep indigo scattered with stars, a crescent moon on the chest
+        torso(k, lambda c, n: T if c.z < 0.55 else J, bulk=0.07, skirt=0.48, flare=0.08)
+        collar(k, T, height=0.06, flare=0.02)
+        stars(k, 40, [(-0.28, 0.28), (0.17, 0.21), (0.6, 1.4)], hexc('#fff3b0'), r=0.008, seed=11)
+        stars(k, 25, [(-0.28, 0.28), (-0.21, -0.17), (0.6, 1.4)], hexc('#fff3b0'), r=0.008, seed=12)
+        pts = [(0.1 + 0.06 * math.cos(a), 0.2, 1.3 + 0.06 * math.sin(a)) for a in [j / 10 * math.pi * 1.4 + 0.5 for j in range(11)]]
+        k.tube(pts, 0.012, 0.004, hexc('#fff3b0'), sides=4)
+        for side in (-1, 1):
+            sleeve(k, side, J, r0=0.09, r1=0.1, cuff=T, cuff_r=0.11)
+    else:
+        torso(k, J)
+        for side in (-1, 1):
+            sleeve(k, side, J)
+    return k.build(f'gear_body_{s}', ao=0.1)
+
+def gear_legs(s):
+    k = Kit(1200 + GEAR_SETS.index(s))
+    if s == 'default':  # jeans and a belt
+        trousers(k, hexc('#3d5a80'), belt=hexc('#4a3424'))
+        return k.build('gear_legs_default', ao=0.12)
+    L = look(s)
+    J, B, T, G = L['jacket'], L['boots'], L['trim'], L['glow']
+    wader = mix(B, J, 0.35)
+    if s == 'canvas':
+        trousers(k, mix(hexc('#6b705c'), J, 0.3), belt=hexc('#2b2d42'), knees=hexc('#4a4e3c'))
+    elif s == 'oilskin':
+        trousers(k, J, r=(0.12, 0.11, 0.095), belt=hexc('#2b2d42'))
+    elif s == 'reedwalker':  # marsh waders, mud up the shins
+        trousers(k, mix(hexc('#4a5a2a'), J, 0.4), belt=hexc('#3b3a26'))
+        for limb, x in ((1, -0.12), (2, 0.12)):
+            with k.limb(limb, leg_t):
+                k.tube_r([(x * 1.04, 0.005, 0.12), (x * 1.04, 0.005, 0.38)], [0.1, 0.095], hexc('#5a4632'), sides=9, cap=False)
+    elif s == 'clover':  # green waders with clover patches on the knees
+        trousers(k, mix(hexc('#1f5130'), J, 0.4), belt=hexc('#ffd166'))
+        for x in (-0.123, 0.123):
+            with k.limb(1 if x < 0 else 2, leg_t):
+                for a in range(4):
+                    ang = a * math.pi / 2 + math.pi / 4
+                    k.ico((x + math.cos(ang) * 0.02, 0.108, 0.55 + math.sin(ang) * 0.02), (0.02, 0.006, 0.02), hexc('#b7f5c5'), subdiv=1, rough=0)
+    elif s == 'seadog':  # straight navy deck trousers with a white piping stripe
+        trousers(k, hexc('#1b1f2e'), belt=hexc('#111111'), stripe=hexc('#e9e4d8'))
+    elif s == 'trophy':  # brown waders with leather knee patches
+        trousers(k, mix(hexc('#5a4632'), J, 0.3), belt=hexc('#3b2410'), knees=hexc('#7a4a22'))
+    elif s == 'storm':  # storm waders with reflective bands and knee pads
+        trousers(k, J, belt=hexc('#111111'), knees=hexc('#1b263b'))
+        for limb, x in ((1, -0.12), (2, 0.12)):
+            with k.limb(limb, leg_t):
+                k.tube_r([(x * 1.04, 0.003, 0.3), (x * 1.04, 0.003, 0.34)], [0.097, 0.097], T, sides=9, cap=False)
+    elif s == 'mariner':  # cream breeches to the knee and white stockings
+        trousers(k, hexc('#efe3c8'), r=(0.115, 0.1, 0.075), belt=T)
+        for limb, x in ((1, -0.12), (2, 0.12)):
+            with k.limb(limb, leg_t):
+                k.tube_r([(x * 1.02, 0.015, 0.47), (x * 1.02, 0.015, 0.53)], [0.104, 0.104], T, sides=9, cap=False)
+    elif s == 'abyssal':  # thick suit legs with leather straps and lead weights at the knees
+        trousers(k, J, r=(0.125, 0.12, 0.11), belt=hexc('#3a2a1a'))
+        for limb, x in ((1, -0.12), (2, 0.12)):
+            with k.limb(limb, leg_t):
+                for z in (0.72, 0.3):
+                    k.tube_r([(x * 1.03, 0.01, z - 0.02), (x * 1.03, 0.01, z + 0.02)], [0.128, 0.128], hexc('#5a3e24'), sides=9, cap=False)
+                k.box((x * 1.03, 0.1, 0.52), (0.1, 0.05, 0.1), hexc('#495057'))
+    elif s == 'emberforged':  # plate greaves with spiked knee guards, glowing seams
+        trousers(k, hexc('#4a4a4a'), belt=J)
+        for limb, x in ((1, -0.12), (2, 0.12)):
+            with k.limb(limb, leg_t):
+                k.tube_r([(x * 1.03, 0.02, 0.85), (x * 1.03, 0.02, 0.58)], [0.115, 0.105], J, sides=9)
+                k.tube_r([(x * 1.04, 0.01, 0.45), (x * 1.04, 0.01, 0.15)], [0.1, 0.092], J, sides=9)
+                k.ico((x * 1.03, 0.09, 0.51), (0.07, 0.05, 0.07), shade(J, 1.2), subdiv=1, rough=0)
+                k.cyl((x * 1.03, 0.13, 0.51), (x * 1.03, 0.2, 0.53), 0.025, 0.0, T, sides=4)
+                k.box((x * 1.03, 0.118, 0.7), (0.012, 0.004, 0.2), G)
+    elif s in ('legend', 'golden', 'mythweaver', 'tidecaller', 'celestial'):
+        base = {'legend': J, 'golden': hexc('#c9a227'), 'mythweaver': J, 'tidecaller': J, 'celestial': hexc('#1d0b4f')}[s]
+        trousers(k, base, belt=T, stripe=T if s in ('legend', 'golden', 'mythweaver') else None)
+        for limb, x in ((1, -0.12), (2, 0.12)):
+            with k.limb(limb, leg_t):
+                if s == 'tidecaller':  # scales
+                    for j in range(5):
+                        k.tube_r([(x * 1.03, 0.01, 0.2 + j * 0.12), (x * 1.03, 0.01, 0.22 + j * 0.12)], [0.1, 0.1], T, sides=9, cap=False)
+                if s == 'celestial':
+                    stars(k, 8, [(x - 0.05, x + 0.05), (0.08, 0.11), (0.2, 0.85)], hexc('#fff3b0'), r=0.007, seed=int(20 + x * 10))
+                if s == 'mythweaver':
+                    for z in (0.35, 0.65):
+                        k.tube_r([(x * 1.03, 0.01, z), (x * 1.03, 0.01, z + 0.025)], [0.103, 0.103], G, sides=9, cap=False)
+    else:
+        trousers(k, wader, belt=hexc('#2b2d42'))
+    return k.build(f'gear_legs_{s}', ao=0.12)
+
+def gear_feet(s):
+    k = Kit(1300 + GEAR_SETS.index(s))
+    if s == 'default':  # trainers
+        boots(k, hexc('#e9ecef'), height=0.12, top_r=0.085, sole=hexc('#f8f9fa'), style='sneaker', trim=hexc('#e63946'))
+        return k.build('gear_feet_default', ao=0.1)
+    L = look(s)
+    B, T, G = L['boots'], L['trim'], L['glow']
+    if s == 'canvas':
+        boots(k, B, height=0.24, style='laced', trim=hexc('#e9dcc0'))
+    elif s == 'oilskin':
+        boots(k, B, height=0.42, top_r=0.115, sole=hexc('#111111'))
+    elif s == 'reedwalker':  # mud boots caked in mud
+        boots(k, B, height=0.36, top_r=0.11)
+        for limb, x in ((1, -0.126), (2, 0.126)):
+            with k.limb(limb, leg_t):
+                k.blob([((x, 0.06, 0.06), (0.085, 0.17, 0.06), hexc('#5a4632'), 1, 0.3, 2.0)], 0.03, 0.35, lambda f: hexc('#5a4632'))
+    elif s == 'clover':  # with a gold horseshoe on each heel
+        boots(k, B, height=0.3, cuff=hexc('#2d9d4a'))
+        for limb, x in ((1, -0.126), (2, 0.126)):
+            with k.limb(limb, leg_t):
+                k.tube([(x - 0.04, -0.09, 0.03), (x - 0.045, -0.1, 0.09), (x, -0.105, 0.12), (x + 0.045, -0.1, 0.09), (x + 0.04, -0.09, 0.03)], 0.01, 0.01, hexc('#ffd166'), sides=4)
+    elif s == 'seadog':
+        boots(k, B, height=0.3, sole=hexc('#3a2a1a'), toe=shade(B, 1.6))
+    elif s == 'trophy':
+        boots(k, B, height=0.26, style='hobnail', trim=hexc('#c9a227'))
+    elif s == 'storm':
+        boots(k, B, height=0.34, top_r=0.11, sole=T, cuff=shade(B, 1.3))
+    elif s == 'mariner':  # tall boots with folded tops and gold buckles
+        boots(k, B, height=0.55, top_r=0.11, cuff=shade(B, 1.3), toe=None)
+        for limb, x in ((1, -0.126), (2, 0.126)):
+            with k.limb(limb, leg_t):
+                k.box((x, 0.11, 0.14), (0.06, 0.02, 0.04), T)
+    elif s == 'abyssal':  # lead diving boots with brass toecaps
+        boots(k, B, height=0.3, top_r=0.12, style='diving', toe=hexc('#c9a227'), sole=hexc('#2b2b2b'))
+    elif s == 'emberforged':  # pointed sabatons with glowing seams
+        boots(k, B, height=0.3, style='pointed', trim=G, toe=shade(B, 1.4))
+    elif s == 'tidecaller':  # coral boots, coral branching from the shafts
+        boots(k, B, height=0.32, trim=T)
+        for limb, x in ((1, -0.126), (2, 0.126)):
+            with k.limb(limb, leg_t):
+                for j, a in enumerate((0.5, 2.0, 3.6)):
+                    p = Vector((x + math.cos(a) * 0.1, math.sin(a) * 0.1, 0.2 + j * 0.04))
+                    q = p + Vector((math.cos(a) * 0.05, math.sin(a) * 0.05, 0.08))
+                    k.tube([p, q], 0.012, 0.005, hexc('#ff8fab'), sides=4)
+                    k.tube([p.lerp(q, 0.5), p.lerp(q, 0.5) + Vector((0, 0.03, 0.04))], 0.008, 0.003, hexc('#ff8fab'), sides=4)
+    elif s == 'celestial':  # comet boots trailing light from the heels
+        boots(k, B, height=0.3, trim=T)
+        for limb, x in ((1, -0.126), (2, 0.126)):
+            with k.limb(limb, leg_t):
+                k.cyl((x, -0.1, 0.12), (x, -0.32, 0.18), 0.05, 0.0, G, sides=6)
+                k.ico((x, -0.06, 0.12), 0.03, hexc('#fff3b0'), subdiv=1, rough=0)
+    elif s in ('legend', 'golden', 'mythweaver'):
+        boots(k, B, height=0.38, top_r=0.11, cuff=T, trim=None, toe=shade(B, 1.3))
+        if G:
+            for limb, x in ((1, -0.126), (2, 0.126)):
+                with k.limb(limb, leg_t):
+                    k.ico((x, 0.105, 0.3), (0.025, 0.012, 0.025), G, subdiv=1, rough=0)
+    else:
+        boots(k, B)
+    return k.build(f'gear_feet_{s}', ao=0.1)
+
+def gear(i):
+    slot, s = GEAR[i]
+    return {'head': gear_head, 'body': gear_body, 'legs': gear_legs, 'feet': gear_feet}[slot](s)
 
 def rod(i):
     """The rod in your hands, along +Y from the butt (y = -0.35) to the tip (2.2): cork grip, reel, guides,
@@ -1213,16 +1784,31 @@ def boss_grab(name, side):
                 p = Vector(path[s])
                 k.cyl(p + Vector((0, 0, 0.9)), p + Vector((0, 0, 1.8)), 0.3, 0.0, hexc('#e9c46a'), sides=4)
         elif name == 'megalodon':
-            # Snapping jaws on the end of a thick, grey body.
-            k.tube(path[:-2], 1.0, 0.85, c, sides=8)
-            e = Vector(path[-1])
-            k.ico(e + Vector((0, 0, 0.5)), (1.0, 1.3, 0.75), c, subdiv=2, rough=0.04)
-            k.ico(e + Vector((0, -side * 0.6, 0.35)), (0.75, 0.6, 0.35), hexc('#6a040f'), subdiv=1, rough=0)
-            for j in range(7):
-                x = -0.6 + j * 0.2
-                k.cyl((x, e.y - side * 0.9, e.z + 0.75), (x, e.y - side * 0.9, e.z + 0.25), 0.1, 0.0, hexc('#f8f9fa'), sides=4)
-            k.ico(e + Vector((0.75, side * 0.2, 0.95)), 0.12, hexc('#0b0b0b'), subdiv=1, rough=0)
-            k.ico(e + Vector((-0.75, side * 0.2, 0.95)), 0.12, hexc('#0b0b0b'), subdiv=1, rough=0)
+            # The shark itself: its head and shoulders out of the water, jaws clamped over the rail, built
+            # nose-forward along +Y and then turned to point from the water up onto the rail.
+            start, end = Vector((0, side * 7.5, -3.5)), Vector((0, -side * 0.7, D + 0.8))
+            before = set(k.bm.verts)
+            dark, belly = shade(c, 0.65), hexc('#e9ecef')
+            k.loft([(-7.5, 0.9, 1.0, 0.0), (-5.0, 1.45, 1.5, 0.05), (-2.6, 1.55, 1.5, 0.1), (-1.0, 1.25, 1.15, 0.2), (-0.25, 0.65, 0.6, 0.28), (0.0, 0.18, 0.2, 0.32)],
+                   lambda p, n: belly if n.z < -0.25 else (dark if n.z > 0.7 else c), sides=12)
+            k.ico((0, -0.95, -0.85), (0.95, 1.05, 0.35), belly, subdiv=2, rough=0.02)  # the lower jaw, dropped open
+            k.ico((0, -0.85, -0.45), (0.8, 0.85, 0.32), hexc('#6a040f'), subdiv=1, rough=0)
+            for j in range(9):
+                a = (j / 8 - 0.5) * 2.6
+                x, y = math.sin(a) * 0.8, -0.95 + math.cos(a) * 0.75
+                k.cyl((x, y, -0.25), (x, y, -0.62), 0.09, 0.0, hexc('#f8f9fa'), sides=4)
+                k.cyl((x * 0.92, y - 0.12, -0.95), (x * 0.92, y - 0.12, -0.6), 0.08, 0.0, hexc('#f8f9fa'), sides=4)
+            for sx in (-1, 1):
+                k.ico((sx * 0.86, -1.15, 0.38), 0.13, hexc('#0b0b0b'), subdiv=1, rough=0)
+                for g in range(4):
+                    k.box((sx * 1.38, -2.7 - g * 0.32, 0.0), (0.06, 0.08, 0.75), shade(c, 0.45))
+                k.fin([(sx * 1.3, -3.2, -0.6), (sx * 3.4, -5.0, -1.7), (sx * 1.3, -4.4, -0.85)], 0.15, dark)
+            k.fin([(0, -4.4, 1.3), (0, -6.2, 3.6), (0, -6.8, 1.2)], 0.2, dark)
+            d = (end - start).normalized()
+            m = d.to_track_quat('Y', 'Z').to_matrix()
+            for v in set(k.bm.verts) - before:
+                v.co = m @ v.co + end
+            k.bm.normal_update()
         else:  # a spectral flipper crusted with barnacles
             k.tube(path, 0.9, 0.35, c, sides=8)
             for s in range(1, len(path) - 1):
@@ -1230,8 +1816,46 @@ def boss_grab(name, side):
                 k.ico(p + Vector((k.rnd.uniform(-0.5, 0.5), 0, 0.6)), k.rnd.uniform(0.15, 0.3), hexc('#ced4da'), subdiv=1, rough=0.3)
     return k.build(f'grab_{name}_{"p" if side > 0 else "n"}', ao=0.1)
 
+
+def boss_slam(name):
+    """What a boss swings at the deck (it's one limb, 1, from its base in the water to its tip), standing up from
+    its base at the origin: the Kraken's slamming tentacle, the Serpent's crushing coil (arching over towards +Y),
+    the Ghost Whale's tail and flukes. Megalodon hits with its whole body, so this is just its dorsal fin."""
+    k = Kit(900 + BOSSES.index(name))
+    c = hexc(BOSS_COLOURS[name])
+    dark, light = shade(c, 0.6), mix(c, hexc('#ffffff'), 0.3)
+    if name == 'kraken':
+        pts = curve([(0, 0, -3), (0, 0.4, 4), (0, -0.5, 9), (0, 0.6, 14), (0, 1.8, 17.5)], 5)
+        with k.limb(1, along(pts)):
+            tentacle(k, pts, 1.6, 0.14, c, hexc('#e0aaff'), sides=10)
+    elif name == 'serpent':
+        gold = hexc('#e9c46a')
+        pts = bezier((0, 0, -3.0), (0, 9.5, 15.0), (0, 19, -3.0), 18)
+        with k.limb(1, along(pts)):
+            _, faces = k.tube(pts, 2.1, 1.9, c, sides=10, jitter=0.05)
+            mid = Vector((0, 9.5, -3))
+            for fi, f in enumerate(faces[:-2]):
+                inward = f.normal.dot((mid - f.calc_center_median()).normalized()) > 0.55
+                k.paint([f], mix(gold, c, 0.35) if inward else (shade(c, 0.8) if (fi // 10) % 4 == 0 else c), 0.06)
+            for s in range(2, len(pts) - 2, 2):
+                p = Vector(pts[s])
+                k.cyl(p + Vector((0, 0, 1.6)), p + Vector((0, 0, 3.0)), 0.45, 0.0, gold, sides=4)
+    elif name == 'ghostwhale':
+        pale, glow = hexc('#bde0fe'), hexc('#90e0ef')
+        with k.limb(1, axis_t(-3, 13, axis=2)):
+            k.tube_r([(0, 0, -3), (0, 0, 2), (0, 0, 6), (0, 0, 9.5)], [2.8, 2.2, 1.5, 0.9], pale, sides=12)
+            for sx in (-1, 1):
+                k.fin([(0, 0, 9.0), (sx * 3.2, 0.2, 9.6), (sx * 8.5, 0.6, 12.8), (sx * 9.2, 0.5, 11.2), (sx * 6.0, 0.3, 9.4), (sx * 1.2, 0, 8.4)], 0.5, pale)
+                for b in range(3):
+                    k.ico((sx * (2.5 + b * 2.0), 0.4, 9.6 + b * 0.9), 0.3, hexc('#ced4da'), subdiv=1, rough=0.3)
+            for z in (0.0, 3.0, 6.0):
+                k.ico((0, 1.6 - z * 0.1, z), (0.5, 0.2, 0.5), glow, subdiv=1, rough=0)
+    else:
+        with k.limb(1, lambda co: 0.0):
+            k.fin([(0, 2.5, -0.5), (0, -2.0, 6.0), (0, -3.5, -0.5)], 0.45, dark)
+    return k.build(f'slam_{name}', ao=0.12)
 def boss_part(i):
-    """All the boss parts in one file: boss_*, hump_*, grab_*_p and grab_*_n."""
+    """All the boss parts in one file: boss_*, hump_*, grab_*_p, grab_*_n and slam_*."""
     n = len(BOSSES)
     name = BOSSES[i % n]
     kind = i // n
@@ -1239,6 +1863,8 @@ def boss_part(i):
         return boss_body(name)
     if kind == 1:
         return boss_hump(name)
+    if kind == 4:
+        return boss_slam(name)
     return boss_grab(name, 1 if kind == 2 else -1)
 
 # ---- fish ----------------------------------------------------------------------------------------------------
@@ -2632,9 +3258,9 @@ KINDS = {
     'zoo': (zoo_wagon, 1),
     'signpost': (signpost, 2),
     'angler': (angler, 1),
-    'hat': (hat, len(HATS)),
+    'gear': (gear, len(GEAR)),
     'rod': (rod, 1),
-    'boss': (boss_part, len(BOSSES) * 4),
+    'boss': (boss_part, len(BOSSES) * 5),
     'fish': (fish, len(FISH_IDS)),
     'pet': (pet, len(PET_IDS)),
     'flowers': (flowers, 5),

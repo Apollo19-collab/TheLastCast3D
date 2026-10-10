@@ -28,7 +28,9 @@ Run `Game\TheLastCast.exe`. Your progress saves to
   shows the whole world, and clicking a place or any dry land on it fast-travels you there
 - **Pets**: all 30, with their abilities. The Travelling Zoo moves around the lake every 15 minutes
   with three animals (the same ones as the web game at that moment); your pet follows you around.
-- **Armour**: all 15 sets, with per-piece perks and full-set effects
+- **Armour**: all 15 sets, with per-piece perks and full-set effects. Every piece has its own model (an
+  oilskin coat, a pea coat, a brass diving helmet, ember plate...), mix and match; the Armour tab shows
+  your angler in 3D (point at a piece to try it on), and other players see exactly what you wear
 - **Achievements**: every goal that doesn't need a missing feature, with coin rewards; tackle
   they unlock needs them again
 - **Chum buckets** and **map events** (Feeding Shoal, Great Haul, Golden Tide), on the web game's
@@ -44,6 +46,19 @@ Run `Game\TheLastCast.exe`. Your progress saves to
   into the golden ring when it breaches to harpoon it, mash E on whatever grabs the rail, and get
   out of the red part of the deck before it slams. Everyone is paid at the end: points, missions,
   rank, the boss, and a share of the prize pool.
+- **Each boss fights like what it is**, and you see every attack happen; the boat rolls and pitches
+  when it's hit:
+  - the Kraken: a tentacle rears up and slams across the deck, tentacles burst up all round and
+    thrash, an ink cloud spreads round the boat
+  - Megalodon: it charges in, fin out, and rams the hull; bites the rail by the stern and rolls;
+    circles the boat in a frenzy; its head clamps onto the rail
+  - the Serpent: coils swing up over the deck and crush it; it swims circles round the boat (a
+    maelstrom); it churns up silt
+  - the Ghost Whale: its tail rises and slams onto the deck; it leaps clear of the water and the
+    wave rocks the boat; a ghostly mist rolls in; its song spreads in rings over the water
+
+  To watch one boss's attacks without playing: `Game\TheLastCast.exe -screen-fullscreen 0 -autoshot
+  shots -attacks kraken` (or megalodon, serpent, ghostwhale).
 
 ### Multiplayer (up to 8 anglers)
 
@@ -99,7 +114,7 @@ and quits, without touching your save.
 
 ## Models (Blender)
 
-The 3D models (trees, rocks, boats, the shops, the zoo wagon, anglers and hats, the rod, all
+The 3D models (trees, rocks, boats, the shops, the zoo wagon, the angler and every armour piece, the rod, all
 108 fish, the 30 pets and the four bosses) are made in Blender by `blender\lastcast_models.py` and
 exported as FBX into `unity-src\Assets\LastCast\Resources\Models`. To rebuild them after
 changing the script:

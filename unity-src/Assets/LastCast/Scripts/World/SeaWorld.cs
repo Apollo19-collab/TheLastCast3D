@@ -62,6 +62,22 @@ namespace LastCast
         // ---- building ----------------------------------------------------------------------------------------
 
         GameObject root, boss, hump, slam, light_;
+        Transform trawler;
+        BossActs acts;
+        readonly List<(float start, float roll, float pitch, float heave, float seconds, float freq)> rocks = new List<(float, float, float, float, float, float)>();
+        readonly Dictionary<int, float> grabBorn = new Dictionary<int, float>();
+        readonly List<(GameObject view, float since)> grabsGoing = new List<(GameObject, float)>();
+
+        /// <summary>How the boat is tilted (rolled about its length, pitched about its beam) and lifted this frame, round
+        /// its middle at the water line: the swell, and the bosses' blows. The deck, your view and the other anglers on
+        /// it all move with it (Tilted).</summary>
+        public static Quaternion Tilt { get; private set; } = Quaternion.identity;
+        public static float Heave { get; private set; }
+        public static Vector3 Tilted(Vector3 p) => Origin + Vector3.up * Heave + Tilt * (p - Origin);
+
+        /// <summary>The Ghost Whale's mist (0 clear, 1 thick).</summary>
+        public float Mist;
+        public Vector3 BossPosition => boss ? boss.transform.position : Origin;
         LimbRig bossRig;
         Mesh ocean;
         Color32[] oceanColours;
@@ -98,6 +114,7 @@ namespace LastCast
             // (hotspot rings, the boss's rings, foam, bobbers, lines), or it would cover them.
             seaMaterial.renderQueue = 2980;
             BuildOcean();
+            acts = BossActs.Create(this, root.transform);
 
             var trawler = new GameObject("Trawler");
             trawler.transform.SetParent(root.transform, false);
@@ -105,6 +122,7 @@ namespace LastCast
             trawler.transform.rotation = Quaternion.Euler(0, 90, 0); // built bow towards +Z; sails east (+X)
             trawler.AddComponent<MeshFilter>().sharedMesh = Models.Or("trawler", 0, TrawlerMesh);
             trawler.AddComponent<MeshRenderer>().sharedMaterial = WorldBuilder.LitMaterial;
+            this.trawler = trawler.transform;
 
             // A deck light for the evening stops.
             light_ = new GameObject("Deck light");
@@ -374,8 +392,9 @@ namespace LastCast
             RenderSettings.ambientSkyColor = s.skyAmb;
             RenderSettings.ambientEquatorColor = s.eqAmb;
             RenderSettings.ambientGroundColor = s.groundAmb;
-            RenderSettings.fogColor = s.fog;
-            GraphicsOptions.SetFog(s.fogStart, s.fogEnd);
+            // The Ghost Whale's mist closes the fog in and pales it.
+            RenderSettings.fogColor = Color.Lerp(s.fog, new Color(0.82f, 0.88f, 0.92f), Mist * 0.85f);
+            GraphicsOptions.SetFog(s.fogStart * Mathf.Lerp(1, 0.02f, Mist), s.fogEnd * Mathf.Lerp(1, 0.15f, Mist));
             seaMaterial.SetColor("_SkyColor", s.water);
             if (skybox && skybox.HasProperty("_Exposure")) skybox.SetFloat("_Exposure", s.exposure);
             var cam = Camera.main;
@@ -420,17 +439,52 @@ namespace LastCast
             foreach (var v in grabViews.Values) if (v) Destroy(v);
             grabViews.Clear();
             shake = 0;
+            acts.Clear();
+            foreach (var (view, _) in grabsGoing) if (view) Destroy(view);
+            grabsGoing.Clear();
+            grabBorn.Clear();
+            rocks.Clear();
+            Mist = 0;
         }
 
         public void Shake(float amount) => shake = Mathf.Max(shake, amount);
+
+        /// <summary>Rock the boat: roll and pitch (degrees) and a lift (metres) that swing at freq times a second and die away over seconds.</summary>
+        public void Rock(float roll, float pitch, float heave, float seconds, float freq) => rocks.Add((Time.time, roll, pitch, heave, seconds, freq));
+
+        void UpdateTilt()
+        {
+            float t = Time.time;
+            // The swell, always; then whatever has hit the boat.
+            float roll = Mathf.Sin(t * 0.55f) * 0.7f, pitch = Mathf.Sin(t * 0.37f + 1) * 0.4f, heave = Mathf.Sin(t * 0.7f) * 0.08f;
+            for (int i = rocks.Count - 1; i >= 0; i--)
+            {
+                var r = rocks[i];
+                float u = t - r.start;
+                if (u > r.seconds) { rocks.RemoveAt(i); continue; }
+                float env = Mathf.Exp(-3.2f * u / r.seconds) * Mathf.Clamp01(u * 6), w = u * r.freq * Mathf.PI * 2;
+                roll += r.roll * env * Mathf.Sin(w + Mathf.PI / 2);
+                pitch += r.pitch * env * Mathf.Sin(w + 1.9f);
+                heave += r.heave * env * Mathf.Sin(w * 1.3f);
+            }
+            Tilt = Quaternion.AngleAxis(roll, Vector3.right) * Quaternion.AngleAxis(pitch, Vector3.forward);
+            Heave = heave;
+            if (trawler) trawler.SetPositionAndRotation(Origin + Vector3.up * heave, Tilt * Quaternion.Euler(0, 90, 0));
+        }
 
         // ---- every frame -------------------------------------------------------------------------------------
 
         void Update()
         {
             var v = Voyage.I;
-            if (v == null || !v.AtSea || !root.activeSelf) return;
+            if (v == null || !v.AtSea || !root.activeSelf)
+            {
+                Tilt = Quaternion.identity;
+                Heave = 0;
+                return;
+            }
             float dt = Time.deltaTime;
+            UpdateTilt();
 
             // Ease the water and the sky towards this stop's.
             float k = 1 - Mathf.Exp(-0.8f * dt);
@@ -525,7 +579,13 @@ namespace LastCast
                     {
                         view = GrabView(b.info, g);
                         grabViews[g.id] = view;
+                        grabBorn[g.id] = Time.time;
                     }
+                    // It rises out of the water beside the hull and hooks on, and moves with the deck.
+                    var at = ToUnity(g.x, g.y);
+                    view.transform.SetPositionAndRotation(Tilted(new Vector3(at.x, 0, at.z)), Tilt);
+                    float risen = Mathf.SmoothStep(0, 1, Mathf.Clamp01((Time.time - (grabBorn.TryGetValue(g.id, out var born) ? born : 0)) / 0.9f));
+                    view.transform.GetChild(0).localPosition = Vector3.down * (1 - risen) * 9;
                     var tm = view.GetComponentInChildren<TextMesh>();
                     tm.text = $"E  ×{g.hp}\n<size=36>{Mathf.CeilToInt(g.until - b.clock)} s</size>";
                     var cam = Camera.main;
@@ -543,9 +603,26 @@ namespace LastCast
             foreach (var id in new List<int>(grabViews.Keys))
                 if (!liveGrabs.Contains(id))
                 {
-                    Destroy(grabViews[id]);
+                    grabsGoing.Add((grabViews[id], Time.time)); // beaten off (or let go): it slides back into the sea
                     grabViews.Remove(id);
+                    grabBorn.Remove(id);
                 }
+            for (int i = grabsGoing.Count - 1; i >= 0; i--)
+            {
+                var (view, since) = grabsGoing[i];
+                float u = (Time.time - since) / 0.9f;
+                if (!view || u >= 1)
+                {
+                    if (view) Destroy(view);
+                    grabsGoing.RemoveAt(i);
+                    continue;
+                }
+                var arm = view.transform.GetChild(0);
+                arm.localPosition = Vector3.down * u * u * 10;
+                arm.localRotation = Quaternion.Euler(Mathf.Sin(u * 20) * 6 * (1 - u), 0, 0);
+                var tag = view.GetComponentInChildren<TextMesh>();
+                if (tag) tag.gameObject.SetActive(false);
+            }
         }
 
         GameObject GrabView(BossInfo info, BossGrab g)
@@ -596,7 +673,7 @@ namespace LastCast
                 boss = new GameObject(info.name);
                 boss.transform.SetParent(root.transform, false);
                 // Rigged so its tentacles, tail, jaw, coils or flippers move (a static mesh if the model has no limbs).
-                bossRig = LimbRig.Attach(boss, BossMeshes.Body(info), WorldBuilder.LitMaterial, 10, BossMotion.Joints(info.id));
+                bossRig = LimbRig.Attach(boss, BossMeshes.Body(info), WorldBuilder.LitMaterial, info.id == "serpent" ? 14 : 10, BossMotion.Joints(info.id));
                 if (bossRig == null)
                 {
                     boss.AddComponent<MeshFilter>().sharedMesh = BossMeshes.Body(info);
@@ -625,16 +702,32 @@ namespace LastCast
             if (v.Phase == VoyagePhase.BossIntro) y = Mathf.Lerp(0, -16, Mathf.Clamp01(v.PhaseLeft / Mathf.Max(1, v.T.bossIntro)));
             else if (v.Phase == VoyagePhase.Results) y = boss.transform.position.y - dt * (b?.result == "won" ? 2.5f : 1.2f);
             else y = Mathf.Sin(Time.time * 0.6f) * 0.6f;
-            var pos = boss.transform.position;
-            var flat = Vector3.Lerp(new Vector3(pos.x, 0, pos.z), new Vector3(lurk.x, 0, lurk.z), 1 - Mathf.Exp(-0.4f * dt));
-            boss.transform.position = new Vector3(flat.x, y, flat.z);
-            var face = Origin - boss.transform.position;
-            face.y = 0;
-            if (face.sqrMagnitude > 1)
-                boss.transform.rotation = Quaternion.Slerp(boss.transform.rotation, Quaternion.LookRotation(face.normalized) * Quaternion.Euler(0, 0, Mathf.Sin(Time.time * 0.8f) * 3), 1 - Mathf.Exp(-2 * dt));
             // Its limbs: wilder as it's hurt, rearing up as a slam comes in.
             float agitation = b != null ? 1 - b.Fraction : 0;
             float rear = b != null && b.result == null && b.attackArea != null ? 1 - Mathf.Clamp01((b.attackAt - b.clock) / 3f) : 0;
+            var pos = boss.transform.position;
+            if (v.Phase == VoyagePhase.Boss && acts.Body(b, pos, out var actPos, out var actRot, ref agitation, ref rear))
+            {
+                // An attack is moving it (a charge, circling the boat, a leap): follow it closely, smoothed.
+                float k = 1 - Mathf.Exp(-9 * dt);
+                boss.transform.position = Vector3.Lerp(pos, actPos, k);
+                boss.transform.rotation = Quaternion.Slerp(boss.transform.rotation, actRot, k);
+            }
+            else
+            {
+                // Back to its lurking spot, easing up or down to the surface rather than jumping; heading where it's
+                // going while it's far off, then turning to face the boat.
+                var flatNow = new Vector3(pos.x, 0, pos.z);
+                var goal = new Vector3(lurk.x, 0, lurk.z);
+                var flat = Vector3.Lerp(flatNow, goal, 1 - Mathf.Exp(-0.45f * dt));
+                boss.transform.position = new Vector3(flat.x, Mathf.Lerp(pos.y, y, 1 - Mathf.Exp(-1.5f * dt)), flat.z);
+                var face = Origin - boss.transform.position;
+                face.y = 0;
+                var travel = goal - flatNow;
+                if (travel.magnitude > 18) face = travel;
+                if (face.sqrMagnitude > 1)
+                    boss.transform.rotation = Quaternion.Slerp(boss.transform.rotation, Quaternion.LookRotation(face.normalized) * Quaternion.Euler(0, 0, Mathf.Sin(Time.time * 0.8f) * 3), 1 - Mathf.Exp(-1.6f * dt));
+            }
             BossMotion.Body(bossRig, info.id, Time.time, agitation, rear);
 
             // A breach: a great hump of it rears up inside the golden ring.

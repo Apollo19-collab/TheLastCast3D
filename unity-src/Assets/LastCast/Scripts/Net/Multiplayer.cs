@@ -39,7 +39,8 @@ namespace LastCast
         public float x, y, z, yaw, pitch;
         public int ls; // LineState
         public float bx, by, bz, tn;
-        public string pet, rod, hat; // armour set for the hat and jacket look
+        public string pet, rod;
+        public string ar; // the armour you're wearing: the set of each slot (head|body|legs|feet), empty for none
         public int c; // catches this session
         public float best; // heaviest this session
         public long vy; // the voyage they're on (or booked on, aboard at the dock): its departure time; 0 on the lake
@@ -393,13 +394,12 @@ namespace LastCast
             var f = Game.I.Fishing;
             var prof = Game.I.Profile;
             var pos = p.transform.position;
-            prof.armour.TryGetValue("body", out var body);
             var st = new AnglerState
             {
                 id = MyId, n = PlayerName, lv = prof.Level, col = (int)(MyId % 10),
                 x = pos.x, y = pos.y, z = pos.z, yaw = p.Yaw, pitch = p.Pitch,
                 ls = (int)f.State, bx = f.BobberPos.x, by = f.BobberPos.y, bz = f.BobberPos.z, tn = f.Tension,
-                pet = prof.pet, rod = prof.equipped["rod"], hat = body != null ? GameData.I.Piece(body).set?.id : null,
+                pet = prof.pet, rod = prof.equipped["rod"], ar = AnglerMesh.GearOf(prof),
                 c = SessionCatches, best = SessionBest,
                 vy = Voyage.I == null ? 0 : Voyage.I.AtSea ? Voyage.I.Id : Voyage.I.Boarded,
                 ch = f.Charge, sp = p.Sprinting,
