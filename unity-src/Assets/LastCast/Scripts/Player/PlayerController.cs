@@ -152,9 +152,9 @@ namespace LastCast
         void Look()
         {
             transform.rotation = Quaternion.Euler(0, yaw, 0);
-            var jolt = Shake > 0 ? UnityEngine.Random.insideUnitSphere * Shake * 0.12f : Vector3.zero;
+            var jolt = Shake > 0 && GraphicsOptions.CameraShake ? UnityEngine.Random.insideUnitSphere * Shake * 0.12f : Vector3.zero;
             Shake = Mathf.Max(0, Shake - Time.deltaTime * 1.2f);
-            Cam.transform.localPosition = new Vector3(0, EyeHeight + Mathf.Sin(bob) * 0.04f, 0) + jolt;
+            Cam.transform.localPosition = new Vector3(0, EyeHeight + (GraphicsOptions.HeadBob ? Mathf.Sin(bob) * 0.04f : 0), 0) + jolt;
             Cam.transform.localRotation = Quaternion.Euler(pitch + jolt.y * 8, jolt.x * 6, jolt.z * 6);
         }
 

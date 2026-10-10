@@ -118,10 +118,11 @@ namespace LastCast
             Open = key switch
             {
                 "tackle" => Menu.Tackle, "index" => Menu.Index, "map" => Menu.Map, "trophies" => Menu.Trophies, "armour" => Menu.Armour,
-                "pets" => Menu.Pets, "zoo" => Menu.Zoo, "goals" => Menu.Goals, "events" => Menu.Events, "online" => Menu.Online, "title" => Menu.Title, _ => Menu.None,
+                "pets" => Menu.Pets, "zoo" => Menu.Zoo, "goals" => Menu.Goals, "events" => Menu.Events, "online" => Menu.Online, "title" => Menu.Title, "graphics" => Menu.Options, _ => Menu.None,
             };
             scroll = Vector2.zero;
             hideAll = key == "hidden";
+            if (key == "graphics") optionsPage = 1;
         }
 
         public void OpenShop(Shop s)
@@ -297,6 +298,7 @@ namespace LastCast
                 if (atSea) DrawResults();
             }
             DrawDock();
+            if (GraphicsOptions.ShowFps) DrawFps();
             switch (Open)
             {
                 case Menu.Map: DrawMap(); break;
@@ -382,6 +384,7 @@ namespace LastCast
             if (pet != null) lines.Add(("paw", $"{pet.name} · {pet.ability}", Skin.Hex(GameData.I.petRarities[pet.rarity].color)));
             var chum = Game.I.Chum;
             if (chum.Out) lines.Add(("bucket", $"Chum: {Clock(chum.Life)} left · {chum.Fish}/{GameData.I.chum.maxFish} fish", Skin.Hex("#e07a5f")));
+            else if (chum.Carrying) lines.Add(("bucket", $"Chum bucket in hand · {Clock(chum.Life)} (C)", Skin.Hex("#e07a5f")));
             else if (P.chum > 0) lines.Add(("bucket", $"{P.chum} chum bucket{(P.chum > 1 ? "s" : "")} (C to put one down)", Skin.Dim));
             var ev = Game.I.Events.Active;
             if (ev != null && (Vy == null || !Vy.AtSea)) lines.Add(("calendar", $"{ev.T.name} at {ev.place.name} now! (V)", Skin.Gold));
@@ -507,6 +510,7 @@ namespace LastCast
             else if (voyagePrompt != null) (prompt, promptColour) = voyagePrompt.Value;
             else if (f.State == LineState.Idle && f.Charge < 0 && near != null) prompt = $"E: open {(near.IsTackle ? near.name : "the Bait Shop")}";
             else if (f.State == LineState.Idle && f.Charge < 0 && Zoo.AtWagon(pl.WorldPos)) prompt = "E: visit the Travelling Zoo";
+            else if (f.State == LineState.Idle && f.Charge < 0 && Game.I.Chum.CanPickUp) prompt = "C: pick up your chum bucket";
             if (prompt != null && !MenuOpen)
             {
                 var st = new GUIStyle(bold) { alignment = TextAnchor.MiddleCenter, wordWrap = false };
@@ -1553,6 +1557,9 @@ namespace LastCast
 
         void DrawOptions()
         {
+            DrawOptionPages();
+            if (optionsPage == 1) { DrawGraphicsOptions(); return; }
+            if (optionsPage == 2) { DrawControls(); return; }
             GUILayout.Label("SETTINGS", new GUIStyle(smallDim) { fontStyle = FontStyle.Bold });
             GUILayout.BeginVertical(row);
             GUILayout.Label($"Mouse sensitivity: <b>{PlayerController.Sensitivity:0.00}</b>", text);
@@ -1575,6 +1582,11 @@ namespace LastCast
             GUILayout.EndHorizontal();
             GUILayout.Space(S(10));
             DrawUpdateOptions();
+            GUILayout.Label("Your progress saves automatically.", smallDim);
+        }
+
+        void DrawControls()
+        {
             GUILayout.Label("CONTROLS", new GUIStyle(smallDim) { fontStyle = FontStyle.Bold });
             var lines = new[]
             {
@@ -1586,7 +1598,7 @@ namespace LastCast
                 ("Reel in", "Right-click or R"),
                 ("Shops", "E at a counter. The Bait Shop is on South Beach; three tackle shops are out in the wilds"),
                 ("Menus", "G tackle · R armour · P pets · I fish index · T goals · K trophies · H history · V events · M map · O or Esc options"),
-                ("Chum", "C: put a chum bucket down (buy them at the Bait Shop)"),
+                ("Chum", "C: put a chum bucket down (buy them at the Bait Shop); C beside it picks it up again to move it"),
                 ("Online", "N: host a game or join one with a code · Enter to chat"),
                 ("Pets", "E at the Travelling Zoo wagon to adopt one; it moves every 15 minutes"),
                 ("Hotspots", "Golden rings on the water: faster bites and rarer fish"),
@@ -1600,7 +1612,6 @@ namespace LastCast
                 GUILayout.Label(v, text);
                 GUILayout.EndHorizontal();
             }
-            GUILayout.Label("Your progress saves automatically.", smallDim);
         }
 
         // ---- the Angler's Map ----------------------------------------------------------------------------------

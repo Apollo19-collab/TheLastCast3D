@@ -170,10 +170,13 @@ namespace LastCast
         void BuildStructures()
         {
             // As the 2D game draws them: posts along both long edges, planks running across in
-            // slightly different shades, a darker edge, and rails on the bridges.
+            // slightly different shades, a darker edge, and rails on the bridges. Where two docks
+            // meet, the later one's planks stop at the earlier one's edge (so the boards don't fight);
+            // and a bridge the voyage boat sails under gets a lifting middle (Drawbridge).
             var kit = new MeshKit();
             Color32 plank = new Color32(158, 112, 70, 255), edge = MeshKit.Hex("#5b3c22"), post = MeshKit.Hex("#4a3020"), rail = MeshKit.Hex("#5b3c22");
             float top = WorldMap.DockHeight;
+            var built = new List<RectU>();
             foreach (var r in data.structures)
             {
                 var rnd = new SeededRandom(Noise.SeedFrom("structure", r.x, r.y));
@@ -183,19 +186,57 @@ namespace LastCast
                 float len = alongX ? w : d, across = alongX ? d : w;
                 Vector3 At(float along, float side, float y) => alongX ? new Vector3(a.x + along, y, a.z + side) : new Vector3(a.x + side, y, a.z + along);
                 Vector3 Size(float along, float side, float h) => alongX ? new Vector3(along, h, side) : new Vector3(side, h, along);
+                // Along this structure, from where (metres) to where: in world units, x grows with along (alongX);
+                // otherwise y shrinks.
+                float AlongOf(float wx, float wy) => alongX ? (wx - r.x) / WorldMap.UnitsPerMetre : (r.y + r.h - wy) / WorldMap.UnitsPerMetre;
+
+                // Stretches left out: under docks already built, and a drawbridge's lifting middle.
+                var skip = new List<(float from, float to)>();
+                foreach (var o in built)
+                {
+                    float x0 = Mathf.Max(r.x, o.x), x1 = Mathf.Min(r.x + r.w, o.x + o.w), y0 = Mathf.Max(r.y, o.y), y1 = Mathf.Min(r.y + r.h, o.y + o.h);
+                    if (x1 <= x0 || y1 <= y0) continue;
+                    float p = AlongOf(x0, y1), q = AlongOf(x1, y0);
+                    skip.Add((Mathf.Min(p, q), Mathf.Max(p, q)));
+                }
+                float? crossing = r.type == "bridge" ? Drawbridge.Crossing(r, AlongOf) : null;
+                const float HalfGap = 6;
+                if (crossing is float c) skip.Add((c - HalfGap, c + HalfGap));
+                bool Skipped(float t) { foreach (var s in skip) if (t > s.from && t < s.to) return true; return false; }
+                // A stretch [t0, t1] with the skipped parts cut out.
+                IEnumerable<(float, float)> Pieces(float t0, float t1)
+                {
+                    var parts = new List<(float, float)> { (t0, t1) };
+                    foreach (var s in skip)
+                    {
+                        var next = new List<(float, float)>();
+                        foreach (var (p0, p1) in parts)
+                        {
+                            if (s.to <= p0 || s.from >= p1) { next.Add((p0, p1)); continue; }
+                            if (s.from > p0) next.Add((p0, s.from));
+                            if (s.to < p1) next.Add((s.to, p1));
+                        }
+                        parts = next;
+                    }
+                    foreach (var p in parts) if (p.Item2 - p.Item1 > 0.04f) yield return p;
+                }
 
                 // Planks, 0.7 m wide, each a slightly different shade.
                 for (float t = 0; t < len; t += 0.7f)
                 {
                     float shade = 1 + (rnd.Next() - 0.5f) * 0.32f;
                     float pl = Mathf.Min(0.64f, len - t);
-                    kit.Box(At(t + pl / 2, across / 2, top - 0.06f), Size(pl, across - 0.1f, 0.12f), MeshKit.Shade(plank, shade));
+                    foreach (var (p0, p1) in Pieces(t, t + pl))
+                        kit.Box(At((p0 + p1) / 2, across / 2, top - 0.06f), Size(p1 - p0, across - 0.1f, 0.12f), MeshKit.Shade(plank, shade));
                 }
-                // Edge boards.
-                foreach (float side in new[] { 0.04f, across - 0.04f })
-                    kit.Box(At(len / 2, side, top - 0.1f), Size(len, 0.1f, 0.2f), edge);
+                // Edge boards, standing a little proud of the planks (level with them, the two flickered).
+                foreach (var (p0, p1) in Pieces(0, len))
+                    foreach (float side in new[] { 0.04f, across - 0.04f })
+                        kit.Box(At((p0 + p1) / 2, side, top - 0.08f), Size(p1 - p0, 0.1f, 0.2f), edge);
                 // Posts every 4.4 m along both edges, down to the bed.
                 for (float t = 0.6f; t < len; t += 4.4f)
+                {
+                    if (Skipped(t)) continue;
                     foreach (float side in new[] { -0.2f, across + 0.2f })
                     {
                         var pos = At(t, side, 0);
@@ -203,9 +244,27 @@ namespace LastCast
                         float postTop = top + (r.type == "bridge" ? 1.0f : 0.2f);
                         kit.Box(new Vector3(pos.x, (postTop + bottom) / 2, pos.z), new Vector3(0.3f, postTop - bottom, 0.3f), post);
                     }
+                }
                 if (r.type == "bridge")
-                    foreach (float side in new[] { -0.2f, across + 0.2f })
-                        kit.Box(At(len / 2, side, top + 0.95f), Size(len, 0.14f, 0.14f), rail);
+                    foreach (var (p0, p1) in Pieces(0, len))
+                        foreach (float side in new[] { -0.2f, across + 0.2f })
+                            kit.Box(At((p0 + p1) / 2, side, top + 0.95f), Size(p1 - p0, 0.14f, 0.14f), rail);
+                if (crossing is float cc)
+                {
+                    // Piers and a gantry at each hinge, then the two leaves.
+                    foreach (float h in new[] { cc - HalfGap - 0.6f, cc + HalfGap + 0.6f }) // just back from the hinges, clear of the leaves
+                    {
+                        foreach (float side in new[] { -0.35f, across + 0.35f })
+                        {
+                            var pos = At(h, side, 0);
+                            float bottom = Mathf.Min(map.GroundHeight(pos.x, pos.z), -0.5f);
+                            kit.Box(new Vector3(pos.x, (top + 3.4f + bottom) / 2, pos.z), new Vector3(0.5f, top + 3.4f - bottom, 0.5f), post);
+                        }
+                        kit.Box(At(h, across / 2, top + 3.3f), Size(0.4f, across + 1.2f, 0.35f), edge);
+                    }
+                    Drawbridge.Create(transform, r, At, alongX, cc, HalfGap, across, top);
+                }
+                built.Add(r);
             }
             MeshObject("Docks", kit.Build("docks"), LitMaterial);
         }

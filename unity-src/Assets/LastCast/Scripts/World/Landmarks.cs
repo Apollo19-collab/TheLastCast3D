@@ -50,7 +50,7 @@ namespace LastCast
             {
                 var text = new GameObject("Name");
                 text.transform.SetParent(root.transform, false);
-                text.transform.localPosition = new Vector3(0, 2.35f, 0.06f * side);
+                text.transform.localPosition = new Vector3(0, 2.35f, 0.075f * side); // just off the board's face
                 text.transform.localRotation = Quaternion.Euler(0, side > 0 ? 180 : 0, 0);
                 var tm = text.AddComponent<TextMesh>();
                 tm.text = name.ToUpper();
@@ -60,7 +60,7 @@ namespace LastCast
                 tm.characterSize = 0.045f;
                 tm.anchor = TextAnchor.MiddleCenter;
                 tm.color = new Color(1f, 0.95f, 0.84f);
-                text.GetComponent<MeshRenderer>().sharedMaterial = ShopStall.Font.material;
+                text.GetComponent<MeshRenderer>().sharedMaterial = ShopStall.TextMaterial;
             }
         }
     }
@@ -193,7 +193,7 @@ namespace LastCast
             tm.characterSize = 0.04f;
             tm.anchor = TextAnchor.MiddleCenter;
             tm.color = new Color(1f, 0.82f, 0.4f);
-            sign.GetComponent<MeshRenderer>().sharedMaterial = ShopStall.Font.material;
+            sign.GetComponent<MeshRenderer>().sharedMaterial = ShopStall.TextMaterial;
             return root;
         }
 

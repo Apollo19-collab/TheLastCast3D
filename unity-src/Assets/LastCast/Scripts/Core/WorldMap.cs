@@ -100,7 +100,12 @@ namespace LastCast
         public float ForestAt(float x, float y) => forest[Index(x, y)] / 255f;
 
         public bool InBounds(float x, float y) => x >= 0 && y >= 0 && x < Width && y < Height;
-        public bool OnStructure(float x, float y) { foreach (var r in data.structures) if (r.Contains(x, y)) return true; return false; }
+        public bool OnStructure(float x, float y)
+        {
+            if (Drawbridge.Blocks(x, y)) return false; // lifted for the boat
+            foreach (var r in data.structures) if (r.Contains(x, y)) return true;
+            return false;
+        }
         public bool OnSolid(float x, float y) { foreach (var r in data.solid) if (r.Contains(x, y)) return true; return false; }
         public bool OnLand(float x, float y) => Sdf(x, y) >= 0;
 

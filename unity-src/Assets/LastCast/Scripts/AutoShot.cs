@@ -72,6 +72,21 @@ namespace LastCast
             g.Hud.OpenForScreenshot("none");
             yield return Shot("1-spawn");
 
+            // A chum bucket: put down, picked up (keeping what it had left), put down somewhere else.
+            g.Profile.chum += 1;
+            var chum = g.Chum;
+            chum.PlaceOrPickUp();
+            bool placed = chum.Out;
+            yield return new WaitForSeconds(1);
+            float life = chum.Life;
+            chum.PlaceOrPickUp();
+            bool carried = chum.Carrying && !chum.Out;
+            var p0 = g.Player.transform.position;
+            g.Player.Teleport(p0 + g.Player.Forward * -6, g.Player.Yaw);
+            chum.PlaceOrPickUp();
+            Debug.Log($"[autoshot] chum: placed {placed}, picked up {carried}, placed again {chum.Out} with {chum.Life:0.0}s left (was {life:0.0}s), buckets left {g.Profile.chum}");
+            chum.PickUp();
+
             // South Beach dock and the boat.
             StandAt(1600, 2050, data.boat.x, data.boat.y, 2);
             yield return new WaitForSeconds(1.5f);
@@ -115,6 +130,25 @@ namespace LastCast
                 yield return Shot("5e-signpost");
             }
 
+            // The drawbridge on the East River: down, then lifted as the boat comes through.
+            var bridge = data.structures.Find(s => s.type == "bridge" && Drawbridge.Crossing(s, (x, y) => 0) != null);
+            if (bridge != null)
+            {
+                float bx = bridge.x + bridge.w / 2, by = bridge.y + bridge.h / 2;
+                double interval = data.boat.interval;
+                BoatSchedule.Offset = 0;
+                double c = ((BoatSchedule.Now % interval) + interval) % interval;
+                BoatSchedule.Offset = (interval * 0.5 - c + interval) % interval; // the boat is away
+                StandAt(bx - 260, by + 120, bx, by, 2);
+                yield return new WaitForSeconds(2f);
+                yield return Shot("5f-bridge-down");
+                c = ((BoatSchedule.Now % interval) + interval) % interval;
+                BoatSchedule.Offset += (interval - data.boat.arrive + 3 - c + interval) % interval; // 3 s into its arrival
+                yield return new WaitForSeconds(3.5f);
+                yield return Shot("5g-bridge-up");
+                BoatSchedule.Offset = 0;
+            }
+
             // The UI: a trophy catch card, then the menus.
             StandAt(data.spawn.x, data.spawn.y, data.spawn.x, data.spawn.y - 400, 6);
             var pike = data.Fish("pike");
@@ -122,7 +156,7 @@ namespace LastCast
             g.Hud.Toast("star", "Level 7", "+140 coins", "New tackle may be in the shops");
             yield return new WaitForSeconds(1.2f);
             yield return Shot("6-catch-card");
-            foreach (var (key, name) in new[] { ("tackle", "7-tackle"), ("index", "8-index"), ("map", "9-map"), ("pets", "10-pets"), ("zoo", "11-zoo"), ("armour", "12-armour"), ("goals", "13-goals"), ("events", "14-events") })
+            foreach (var (key, name) in new[] { ("tackle", "7-tackle"), ("index", "8-index"), ("map", "9-map"), ("pets", "10-pets"), ("zoo", "11-zoo"), ("armour", "12-armour"), ("goals", "13-goals"), ("events", "14-events"), ("graphics", "14b-graphics") })
             {
                 g.Hud.OpenForScreenshot(key);
                 yield return new WaitForSeconds(key == "index" || key == "pets" || key == "zoo" ? 3 : 1);

@@ -44,7 +44,7 @@ namespace LastCast
         {
             I = this;
             DontDestroyOnLoad(gameObject);
-            Application.targetFrameRate = 144;
+            GraphicsOptions.Load();
             Profile = Profile.LoadOrCreate();
 
             SetUpScene();
@@ -67,6 +67,8 @@ namespace LastCast
                 ? new Vector3(saved[0], 0, saved[2])
                 : map.ToUnity(data.spawn.x, data.spawn.y);
             Player.Init(start, 0); // facing north, towards the lake
+            GraphicsOptions.ApplyDisplay();
+            GraphicsOptions.Apply();
             Fishing = playerGo.AddComponent<Fishing>();
             Fishing.Init(Player);
             Sfx.Init(camGo);
@@ -112,8 +114,7 @@ namespace LastCast
             RenderSettings.ambientGroundColor = new Color(0.3f, 0.28f, 0.22f);
             RenderSettings.fog = true;
             RenderSettings.fogMode = FogMode.Linear;
-            RenderSettings.fogStartDistance = 160;
-            RenderSettings.fogEndDistance = 560;
+            GraphicsOptions.SetFog(160, 560);
             RenderSettings.fogColor = new Color(0.72f, 0.82f, 0.9f);
             QualitySettings.shadowDistance = 90;
         }
@@ -142,7 +143,7 @@ namespace LastCast
                 if (kb.cKey.wasPressedThisFrame)
                 {
                     if (voyage.AtSea || voyage.Boarded != 0) Flash("Save your chum for the lake.");
-                    else Chum.Place();
+                    else Chum.PlaceOrPickUp();
                 }
             }
         }

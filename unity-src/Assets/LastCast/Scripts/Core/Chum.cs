@@ -22,25 +22,54 @@ namespace LastCast
 
         ChumConfig Cfg => GameData.I.chum;
 
+        /// <summary>Carrying a bucket you picked up (it keeps the time and fish it had left): C puts it down again.</summary>
+        public bool Carrying { get; private set; }
+        const float PickUpRange = 30; // world units: 3 m
+
+        /// <summary>Close enough to your own bucket to pick it up.</summary>
+        public bool CanPickUp => Out && Vector2.Distance(Pos, Game.I.Player.WorldPos) <= PickUpRange;
+
+        /// <summary>C: pick up your bucket if you're beside it, otherwise put one down.</summary>
+        public void PlaceOrPickUp()
+        {
+            if (CanPickUp) PickUp();
+            else Place();
+        }
+
+        public void PickUp()
+        {
+            if (!Out) return;
+            Out = false;
+            Carrying = true;
+            if (bucket) Destroy(bucket);
+            if (Multiplayer.I.Online) Multiplayer.I.SendReliable("chumgone", new JObject());
+            Game.I.Hud.Feed($"You picked up your chum bucket ({Life / 60:0} min, {Cfg.maxFish - Fish} fish left in it). Press C to put it down somewhere else.", Skin.Hex("#e07a5f"));
+            Sfx.Play("plop");
+        }
+
         public void Place()
         {
             var g = Game.I;
             var p = g.Profile;
             string message = null;
             var at = g.Player.WorldPos;
-            if (p.chum <= 0) message = "You have no chum buckets. Buy them at the Bait Shop.";
-            else if (Out) message = "You already have a chum bucket out.";
+            if (!Carrying && p.chum <= 0) message = "You have no chum buckets. Buy them at the Bait Shop.";
+            else if (Out) message = "You already have a chum bucket out (stand beside it and press C to pick it up).";
             else if (!WorldMap.I.IsWalkable(at.x, at.y)) message = "You can't put a bucket down here.";
             if (message != null) { g.Flash(message, 3); Sfx.Play("error"); return; }
-            p.chum--;
-            p.Save();
+            if (Carrying) Carrying = false; // the same bucket, with what it had left
+            else
+            {
+                p.chum--;
+                p.Save();
+                Life = Cfg.duration;
+                Fish = 0;
+            }
             Out = true;
             Pos = at;
-            Life = Cfg.duration;
-            Fish = 0;
             bucket = BucketModel(WorldMap.I.ToUnity(at.x, at.y, WorldMap.I.StandHeight(g.Player.transform.position)));
-            g.Hud.Feed($"Chum bucket down! Land fish near it to turn them into bait. Lasts {Cfg.duration / 60:0} minutes or {Cfg.maxFish} fish.", Skin.Hex("#e07a5f"));
-            if (Multiplayer.I.Online) Multiplayer.I.SendReliable("chum", new JObject { ["x"] = at.x, ["y"] = at.y, ["life"] = Cfg.duration });
+            g.Hud.Feed($"Chum bucket down! Land fish near it to turn them into bait. {Life / 60:0} minutes or {Cfg.maxFish - Fish} fish left.", Skin.Hex("#e07a5f"));
+            if (Multiplayer.I.Online) Multiplayer.I.SendReliable("chum", new JObject { ["x"] = at.x, ["y"] = at.y, ["life"] = Life });
             Sfx.Play("plop");
         }
 

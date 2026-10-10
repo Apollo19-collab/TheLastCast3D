@@ -9,6 +9,20 @@ namespace LastCast
     {
         static Font font;
         public static Font Font => font ??= Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+        static Material textMaterial;
+
+        /// <summary>For text out in the world: hidden behind things and seen from the front only (Shaders/WorldText).</summary>
+        public static Material TextMaterial
+        {
+            get
+            {
+                if (textMaterial) return textMaterial;
+                textMaterial = new Material(Resources.Load<Shader>("Shaders/WorldText")) { mainTexture = Font.material.mainTexture };
+                // The font's texture is rebuilt as it meets new letters.
+                Font.textureRebuilt += f => { if (f == font && textMaterial) textMaterial.mainTexture = f.material.mainTexture; };
+                return textMaterial;
+            }
+        }
 
         public static void Create(Transform parent, Shop shop)
         {
@@ -84,7 +98,7 @@ namespace LastCast
             tm.anchor = TextAnchor.MiddleCenter;
             tm.alignment = TextAlignment.Center;
             tm.color = new Color(1f, 0.95f, 0.84f);
-            sign.GetComponent<MeshRenderer>().sharedMaterial = Font.material;
+            sign.GetComponent<MeshRenderer>().sharedMaterial = TextMaterial;
             // Text meshes read from the -Z side, which is the counter's (south) side.
             var board = new MeshKit();
             board.Box(Vector3.zero, new Vector3(Mathf.Max(2.4f, tm.text.Length * 0.2f), 0.7f, 0.08f), MeshKit.Hex("#3a2410"));

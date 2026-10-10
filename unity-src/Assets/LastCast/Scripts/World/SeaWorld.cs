@@ -357,7 +357,7 @@ namespace LastCast
                 sun = sun ? sun.transform.eulerAngles : new Vector3(48, -35, 0), sunColour = sun ? sun.color : Color.white, intensity = sun ? sun.intensity : 1,
                 skyAmb = RenderSettings.ambientSkyColor, eqAmb = RenderSettings.ambientEquatorColor, groundAmb = RenderSettings.ambientGroundColor,
                 fog = RenderSettings.fogColor, water = WorldBuilder.WaterMaterial.GetColor("_SkyColor"),
-                fogStart = RenderSettings.fogStartDistance, fogEnd = RenderSettings.fogEndDistance,
+                fogStart = GraphicsOptions.FogStart, fogEnd = GraphicsOptions.FogEnd,
                 exposure = sky && sky.HasProperty("_Exposure") ? sky.GetFloat("_Exposure") : 1,
             };
         }
@@ -375,8 +375,7 @@ namespace LastCast
             RenderSettings.ambientEquatorColor = s.eqAmb;
             RenderSettings.ambientGroundColor = s.groundAmb;
             RenderSettings.fogColor = s.fog;
-            RenderSettings.fogStartDistance = s.fogStart;
-            RenderSettings.fogEndDistance = s.fogEnd;
+            GraphicsOptions.SetFog(s.fogStart, s.fogEnd);
             seaMaterial.SetColor("_SkyColor", s.water);
             if (skybox && skybox.HasProperty("_Exposure")) skybox.SetFloat("_Exposure", s.exposure);
             var cam = Camera.main;

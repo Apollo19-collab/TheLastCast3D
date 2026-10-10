@@ -697,10 +697,15 @@ def lake_boat(i):
     # Mast and flag, a life ring, benches for the passengers.
     k.tube([(0, -L * 0.3, D + 2.6), (0, -L * 0.3, D + 6.2)], 0.09, 0.07, hexc('#5b3c22'), sides=6)
     k.poly([(0.05, -L * 0.3, D + 6.1), (0.05, -L * 0.3 + 0.9, D + 5.85), (0.05, -L * 0.3, D + 5.6)], hexc('#e63946'))
-    for y in (-2.5, 1.5, 5.5):
+    # Benches along each side, inside the bulwark all the way along (the hull narrows towards the bow).
+    def inner(y):
+        return interp([(sy, w - 0.15) for sy, w in stations], y)
+
+    for y, length in ((-2.5, 2.4), (1.5, 2.4), (4.6, 2.0)):
+        x = min(inner(y - length / 2), inner(y + length / 2)) - 0.32
         for side in (-1, 1):
-            k.box((side * (B - 0.7), y, D + 0.25), (0.45, 2.4, 0.08), hexc('#8a5a33'))
-            k.box((side * (B - 0.7), y, D + 0.12), (0.35, 2.2, 0.24), hexc('#5b3c22'))
+            k.box((side * x, y, D + 0.25), (0.45, length, 0.08), hexc('#8a5a33'))
+            k.box((side * x, y, D + 0.12), (0.35, length - 0.2, 0.24), hexc('#5b3c22'))
     return k.build('boat_0', ao=0.12)
 
 def trawler(i):

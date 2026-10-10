@@ -16,8 +16,8 @@ Run `Game\TheLastCast.exe`. Your progress saves to
 | Reel in | Right-click or R (or walk too far from your bobber) |
 | Shops, the zoo, the boat | E at a shop counter, the Travelling Zoo wagon, or the voyage boat when it's docked |
 | At sea | E beats off whatever has grabbed the rail in the boss fight |
-| Chum bucket | C to put one down (buy them at the Bait Shop) |
-| Menus | G tackle, R armour, P pets, I fish index, T goals, K trophies, H history, V events, M map, N online, O / Esc options |
+| Chum bucket | C to put one down (buy them at the Bait Shop); C beside it picks it up again, with the time and fish it had left |
+| Menus | G tackle, R armour, P pets, I fish index, T goals, K trophies, H history, V events, M map, N online, O / Esc options (General, Graphics, Controls) |
 | Chat | Enter (when you're in a multiplayer game) |
 
 ### What's in it (from the web game)
@@ -32,7 +32,8 @@ Run `Game\TheLastCast.exe`. Your progress saves to
 - **Chum buckets** and **map events** (Feeding Shoal, Great Haul, Golden Tide), on the web game's
   clock, scaled for one angler
 - **Boat voyages**: every 15 minutes (on the quarter hour, the same clock as the web game) a boat
-  comes up the East River and docks at the South Beach dock for two minutes. Press E to board.
+  comes up the East River (the drawbridge lifts to let it through) and docks at the South Beach
+  dock for two minutes. Press E to board.
   Out at sea you fish from a trawler's deck at 3 of the 8 sea locations, each with its own fish,
   legendary, time of day and special event (Feeding Frenzy, Treasure Tide, Squall...), with three
   crew missions.
