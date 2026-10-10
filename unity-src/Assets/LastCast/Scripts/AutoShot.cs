@@ -3,6 +3,7 @@
 // saved to your profile in this mode.
 
 using System.Collections;
+using System.Collections.Generic;
 using System.IO;
 using UnityEngine;
 
@@ -129,7 +130,85 @@ namespace LastCast
             }
             g.Hud.OpenForScreenshot("none");
             yield return VoyageTour();
+            yield return PoseTour();
             Application.Quit();
+        }
+
+        /// <summary>
+        /// The animations, frozen at a few moments: each boss (and what it grabs the rail with) in a studio far
+        /// below the world, then a line of other players walking, running, hopping, charging a cast, casting and reeling.
+        /// </summary>
+        IEnumerator PoseTour()
+        {
+            var studio = new Vector3(0, -600, 0);
+            var camGo = new GameObject("Pose camera");
+            var cam = camGo.AddComponent<Camera>();
+            cam.depth = 50;
+            cam.farClipPlane = 400;
+            cam.clearFlags = CameraClearFlags.SolidColor;
+            cam.backgroundColor = new Color(0.55f, 0.7f, 0.82f);
+            Game.I.Hud.OpenForScreenshot("hidden");
+            foreach (var info in GameData.I.voyage.bosses)
+            {
+                var boss = new GameObject("Pose " + info.id);
+                boss.transform.position = studio;
+                boss.transform.rotation = Quaternion.Euler(0, 160, 0);
+                var rig = LimbRig.Attach(boss, BossMeshes.Body(info), WorldBuilder.LitMaterial, 10, BossMotion.Joints(info.id));
+                var grab = new GameObject("Pose grab");
+                grab.transform.position = studio + new Vector3(-30, 0, 10);
+                var grabRig = LimbRig.Attach(grab, BossMeshes.Grabber(info, 1), WorldBuilder.LitMaterial, 12);
+                camGo.transform.position = studio + new Vector3(-14, 16, -58);
+                camGo.transform.LookAt(studio + new Vector3(-8, 4, 0));
+                int n = 0;
+                foreach (var (t, agitation, rear) in new[] { (0f, 0f, 0f), (1.3f, 0.5f, 0f), (2.6f, 1f, 1f) })
+                {
+                    BossMotion.Body(rig, info.id, t, agitation, rear);
+                    BossMotion.Grabber(grabRig, info.id, t * 2, agitation, 0);
+                    yield return null;
+                    yield return Shot($"24-pose-{info.id}-{n++}");
+                }
+                Destroy(boss);
+                Destroy(grab);
+            }
+
+            // Other players, side on.
+            var poses = new (string what, AnglerState st, Vector3 vel)[]
+            {
+                ("idle", new AnglerState(), Vector3.zero),
+                ("walk", new AnglerState(), new Vector3(0, 0, Tuning.WalkSpeed)),
+                ("run", new AnglerState { sp = true }, new Vector3(0, 0, Tuning.WalkSpeed * Tuning.SprintSpeed)),
+                ("charge", new AnglerState { ch = 0.95f }, Vector3.zero),
+                ("cast", new AnglerState { ls = (int)LineState.Casting }, Vector3.zero),
+                ("reel", new AnglerState { ls = (int)LineState.Reeling, tn = 0.6f }, Vector3.zero),
+            };
+            var anglers = new List<RemoteAngler>();
+            for (int i = 0; i < poses.Length; i++)
+            {
+                var st = poses[i].st;
+                st.id = (ulong)(900 + i);
+                st.n = poses[i].what;
+                st.col = i;
+                var at = studio + new Vector3(i * 1.6f, 0, 0);
+                st.x = at.x; st.y = at.y; st.z = at.z;
+                st.yaw = 90; // side on to the camera
+                st.bx = at.x + 6; st.by = at.y; st.bz = at.z + 8;
+                var r = RemoteAngler.Create(st.id);
+                r.TestVelocity = poses[i].vel;
+                r.Apply(st);
+                anglers.Add(r);
+            }
+            camGo.transform.position = studio + new Vector3(4, 1.4f, -9);
+            camGo.transform.LookAt(studio + new Vector3(4, 1.0f, 0));
+            cam.fieldOfView = 55;
+            for (int k = 0; k < 3; k++)
+            {
+                // The cast pose is the moment after letting go: restart it each time.
+                if (k > 0) anglers[4].RestartCast();
+                yield return new WaitForSeconds(0.12f + k * 0.21f);
+                yield return Shot($"25-pose-anglers-{k}");
+            }
+            foreach (var r in anglers) Destroy(r.gameObject);
+            Destroy(camGo);
         }
 
         /// <summary>The voyage boat at the dock, then a whole (shortened) voyage: stops, an event, the boss, the results.</summary>

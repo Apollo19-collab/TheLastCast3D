@@ -45,7 +45,7 @@ namespace LastCast
         static readonly Dictionary<string, Dictionary<string, Mesh>> named = new Dictionary<string, Dictionary<string, Mesh>>();
 
         /// <summary>
-        /// A copy of a model with its colourable regions painted (a shop's awning, a jacket, a fish's body).
+        /// A copy of a model with its colourable regions painted (a shop's awning, a jacket, a hat).
         /// In the Blender models those parts are white with a region code in the alpha channel (254 = the first
         /// colour given, 253 the second...); their shading is kept.
         /// </summary>

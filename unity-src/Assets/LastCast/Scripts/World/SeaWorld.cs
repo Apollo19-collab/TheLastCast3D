@@ -62,6 +62,7 @@ namespace LastCast
         // ---- building ----------------------------------------------------------------------------------------
 
         GameObject root, boss, hump, slam, light_;
+        LimbRig bossRig;
         Mesh ocean;
         Color32[] oceanColours;
         float[] oceanMix;
@@ -530,9 +531,15 @@ namespace LastCast
                     tm.text = $"E  ×{g.hp}\n<size=36>{Mathf.CeilToInt(g.until - b.clock)} s</size>";
                     var cam = Camera.main;
                     if (cam) tm.transform.rotation = Quaternion.LookRotation(tm.transform.position - cam.transform.position);
-                    // It writhes, more as it's beaten.
-                    float w = Mathf.Sin(Time.time * (3 + 6 * (1 - g.hp / (float)g.max))) * 6;
-                    view.transform.GetChild(0).localRotation = Quaternion.Euler(w, 0, w * 0.5f);
+                    // It squeezes and writhes, more as it's beaten.
+                    float struggle = 1 - g.hp / (float)Mathf.Max(1, g.max);
+                    var rig = view.GetComponentInChildren<LimbRig>();
+                    if (rig) BossMotion.Grabber(rig, b.info.id, Time.time, struggle, g.id * 1.3f);
+                    else
+                    {
+                        float w = Mathf.Sin(Time.time * (3 + 6 * struggle)) * 6;
+                        view.transform.GetChild(0).localRotation = Quaternion.Euler(w, 0, w * 0.5f);
+                    }
                 }
             foreach (var id in new List<int>(grabViews.Keys))
                 if (!liveGrabs.Contains(id))
@@ -551,8 +558,11 @@ namespace LastCast
             float side = Mathf.Sign(p.z - Origin.z); // which rail: out from the middle of the boat
             var arm = new GameObject("Arm");
             arm.transform.SetParent(go.transform, false);
-            arm.AddComponent<MeshFilter>().sharedMesh = BossMeshes.Grabber(info, side);
-            arm.AddComponent<MeshRenderer>().sharedMaterial = WorldBuilder.LitMaterial;
+            if (!LimbRig.Attach(arm, BossMeshes.Grabber(info, side), WorldBuilder.LitMaterial, 12))
+            {
+                arm.AddComponent<MeshFilter>().sharedMesh = BossMeshes.Grabber(info, side);
+                arm.AddComponent<MeshRenderer>().sharedMaterial = WorldBuilder.LitMaterial;
+            }
             var tag = new GameObject("Hits");
             tag.transform.SetParent(go.transform, false);
             tag.transform.localPosition = new Vector3(0, DeckY + 3.4f, side * -0.6f);
@@ -586,8 +596,13 @@ namespace LastCast
                 bossShown = info.id;
                 boss = new GameObject(info.name);
                 boss.transform.SetParent(root.transform, false);
-                boss.AddComponent<MeshFilter>().sharedMesh = BossMeshes.Body(info);
-                boss.AddComponent<MeshRenderer>().sharedMaterial = WorldBuilder.LitMaterial;
+                // Rigged so its tentacles, tail, jaw, coils or flippers move (a static mesh if the model has no limbs).
+                bossRig = LimbRig.Attach(boss, BossMeshes.Body(info), WorldBuilder.LitMaterial, 10, BossMotion.Joints(info.id));
+                if (bossRig == null)
+                {
+                    boss.AddComponent<MeshFilter>().sharedMesh = BossMeshes.Body(info);
+                    boss.AddComponent<MeshRenderer>().sharedMaterial = WorldBuilder.LitMaterial;
+                }
                 boss.transform.position = Origin + new Vector3(0, -16, -70);
                 hump = new GameObject("Breach");
                 hump.transform.SetParent(root.transform, false);
@@ -618,6 +633,10 @@ namespace LastCast
             face.y = 0;
             if (face.sqrMagnitude > 1)
                 boss.transform.rotation = Quaternion.Slerp(boss.transform.rotation, Quaternion.LookRotation(face.normalized) * Quaternion.Euler(0, 0, Mathf.Sin(Time.time * 0.8f) * 3), 1 - Mathf.Exp(-2 * dt));
+            // Its limbs: wilder as it's hurt, rearing up as a slam comes in.
+            float agitation = b != null ? 1 - b.Fraction : 0;
+            float rear = b != null && b.result == null && b.attackArea != null ? 1 - Mathf.Clamp01((b.attackAt - b.clock) / 3f) : 0;
+            BossMotion.Body(bossRig, info.id, Time.time, agitation, rear);
 
             // A breach: a great hump of it rears up inside the golden ring.
             var br = v.Phase == VoyagePhase.Boss ? b?.breach : null;

@@ -116,9 +116,12 @@ namespace LastCast
                     var s = GameData.I.Fish(id);
                     if (s == null) continue;
                     model.sharedMesh = RodView.FishMesh(s);
+                    // Side on, scaled to fit (a marlin's bill, an opah's fins) and centred.
+                    var b = model.sharedMesh.bounds;
+                    float scale = Mathf.Min(1, 1.15f / Mathf.Max(0.01f, b.size.z), 0.58f / Mathf.Max(0.01f, b.size.y));
                     model.transform.rotation = Quaternion.Euler(0, -90, 0) * Quaternion.Euler(8, 0, 0);
-                    model.transform.localScale = Vector3.one;
-                    model.transform.position = origin;
+                    model.transform.localScale = Vector3.one * scale;
+                    model.transform.position = origin - model.transform.rotation * b.center * scale;
                 }
                 rendering = id;
             }

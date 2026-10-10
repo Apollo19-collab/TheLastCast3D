@@ -29,6 +29,9 @@ namespace LastCast
         float yaw, pitch, feetY, vy, bob;
 
         public float Yaw => yaw;
+        /// <summary>The step cycle (radians), and how much you're walking (0 standing still, 1 striding), for the rod's sway.</summary>
+        public float Bob => bob;
+        public float Striding { get; private set; }
         public void SetPitch(float p) => pitch = p;
 
         /// <summary>Turn to look at a point (AutoShot).</summary>
@@ -83,6 +86,7 @@ namespace LastCast
                 Grounded = true;
                 Sprinting = false;
                 bob = 0;
+                Striding = 0;
                 Look();
                 return;
             }
@@ -140,6 +144,7 @@ namespace LastCast
             }
             transform.position = new Vector3(transform.position.x, feetY, transform.position.z);
             bool walking = moved && Grounded;
+            Striding = Mathf.MoveTowards(Striding, walking ? (Sprinting ? 1.4f : 1) : 0, dt * 5);
             bob = walking ? bob + dt * (Sprinting ? 13 : fishing ? 6 : 9) : Mathf.Lerp(bob, Mathf.Round(bob / Mathf.PI) * Mathf.PI, dt * 6);
             Look();
         }

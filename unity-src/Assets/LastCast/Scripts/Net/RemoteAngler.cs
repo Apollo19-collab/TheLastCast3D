@@ -4,6 +4,7 @@
 // between the ~12 updates a second.
 
 using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
 
 namespace LastCast
@@ -17,7 +18,14 @@ namespace LastCast
         Vector3 target, vel;
         float yaw;
         string look = "?";
-        MeshFilter body;
+        Transform body; // the rigged angler (Body), rebuilt when their look changes
+        LimbRig rig;
+        // The walk and cast animation.
+        float phase, walk, run, castT = 9;
+        LineState lastLine;
+        /// <summary>AutoShot's poses: animate as if moving at this velocity.</summary>
+        public Vector3? TestVelocity;
+        public void RestartCast() => castT = 0;
         Transform rodPivot, rodTip, pet;
         MeshFilter petMesh;
         string petShown;
@@ -36,9 +44,6 @@ namespace LastCast
 
         void Build()
         {
-            body = gameObject.AddComponent<MeshFilter>();
-            gameObject.AddComponent<MeshRenderer>().sharedMaterial = WorldBuilder.LitMaterial;
-
             rodPivot = new GameObject("Rod").transform;
             rodPivot.SetParent(transform, false);
             rodPivot.localPosition = new Vector3(0.32f, 1.15f, 0.25f);
@@ -107,7 +112,7 @@ namespace LastCast
             if (want != look)
             {
                 look = want;
-                body.sharedMesh = AnglerMesh.Build(st.hat, Colours[st.col % Colours.Length]);
+                RebuildBody(AnglerMesh.Build(st.hat, Colours[st.col % Colours.Length]));
             }
             tag.text = $"{st.n}\n<size=32>Lv {st.lv}</size>";
             tag.richText = true;
@@ -122,7 +127,7 @@ namespace LastCast
 
             var ls = (LineState)State.ls;
             bool lineOut = ls != LineState.Idle;
-            rodPivot.localRotation = Quaternion.Euler(lineOut ? -20 + State.tn * 25 : -55, 0, 0);
+            Animate(ls, Time.deltaTime);
             bobber.SetActive(lineOut);
             line.enabled = lineOut;
             if (lineOut)
@@ -163,6 +168,116 @@ namespace LastCast
             }
         }
 
+        /// <summary>A new body for a new look: the angler model skinned to its hips, knees, shoulders, elbows and neck, with the rod in its right hand.</summary>
+        void RebuildBody(Mesh mesh)
+        {
+            rodPivot.SetParent(transform, false);
+            if (body) Destroy(body.gameObject);
+            body = new GameObject("Body").transform;
+            body.SetParent(transform, false);
+            rig = LimbRig.Attach(body.gameObject, mesh, WorldBuilder.LitMaterial, joints: AnglerMesh.Joints, hard: true);
+            var arm = rig ? rig[4] : null;
+            if (arm != null && arm.Count > 1)
+            {
+                rodPivot.SetParent(arm.Bones[1], false);
+                rodPivot.localPosition = AnglerMesh.Hand - arm.Joints[1];
+            }
+            else
+            {
+                if (!rig)
+                {
+                    body.gameObject.AddComponent<MeshFilter>().sharedMesh = mesh;
+                    body.gameObject.AddComponent<MeshRenderer>().sharedMaterial = WorldBuilder.LitMaterial;
+                }
+                rodPivot.localPosition = AnglerMesh.Hand;
+            }
+        }
+
+        /// <summary>
+        /// Walking and running (legs and arms swinging, a bob, a lean when sprinting), a hop, and fishing: the rod
+        /// drawn back over the shoulder while they charge a cast, whipped forward when they let go, held out with
+        /// both hands while the line is out, and the reel cranked as they reel in.
+        /// </summary>
+        void Animate(LineState ls, float dt)
+        {
+            var st = State;
+            if (ls == LineState.Casting && lastLine != LineState.Casting) castT = 0;
+            lastLine = ls;
+            castT += dt;
+            float tension = st.tn;
+            if (!rig)
+            {
+                rodPivot.localRotation = Quaternion.Euler(ls != LineState.Idle ? -20 + tension * 25 : -55, 0, 0);
+                return;
+            }
+
+            var v = TestVelocity ?? vel;
+            float speed = new Vector3(v.x, 0, v.z).magnitude;
+            bool airborne = transform.position.y - Place.StandHeight(transform.position) > 0.15f;
+            walk = Mathf.MoveTowards(walk, Mathf.Clamp01(speed / 1.5f), dt * 4);
+            run = Mathf.MoveTowards(run, st.sp && speed > Tuning.WalkSpeed * 1.1f ? 1 : 0, dt * 3);
+            phase = (phase + dt * speed / Mathf.Lerp(2.2f, 3.0f, run) * Mathf.PI * 2) % (Mathf.PI * 200);
+            float swing = Mathf.Lerp(24, 42, run) * walk;
+            float k = 1 - Mathf.Exp(-18 * dt);
+
+            void Turn(int limb, int bone, Quaternion q, float rate)
+            {
+                var l = rig[limb];
+                if (l != null && bone < l.Count) l.Bones[bone].localRotation = Quaternion.Slerp(l.Bones[bone].localRotation, q, rate);
+            }
+
+            // Legs: thighs swing (negative: forward), knees bend on the forward swing; tucked up in a hop.
+            for (int side = 0; side < 2; side++)
+            {
+                float p = phase + side * Mathf.PI;
+                float thigh = -swing * Mathf.Sin(p), knee = swing * 1.3f * Mathf.Max(0, Mathf.Cos(p)) + 4 * walk;
+                if (airborne) { thigh = -28; knee = 48; }
+                Turn(1 + side, 0, Quaternion.Euler(thigh, 0, 0), k);
+                Turn(1 + side, 1, Quaternion.Euler(knee, 0, 0), k);
+            }
+            // The whole body bobs with each step and leans into a sprint.
+            rig.Root.localPosition = new Vector3(0, (Mathf.Abs(Mathf.Cos(phase)) - 0.6f) * 0.045f * walk, 0);
+            rig.Root.localRotation = Quaternion.Slerp(rig.Root.localRotation, Quaternion.Euler(7 * run * walk, 0, 0), k);
+            // Looking up and down.
+            Turn(5, 0, Quaternion.Euler(Mathf.Clamp(st.pitch, -40, 40) * 0.6f, 0, 0), k);
+
+            // Arms. The left swings opposite the left leg (or holds the rod and cranks the reel); the right holds the rod.
+            float shL = swing * 0.7f * Mathf.Sin(phase), shLz = 0, elL = -12 - 50 * run * walk;
+            float shR = swing * 0.25f * Mathf.Sin(phase + Mathf.PI), shRz = 0, elR = -10, rod = -55;
+            if (ls != LineState.Idle)
+            {
+                rod = -20 + tension * 25;
+                shL = -30; shLz = 22; elL = -45;
+            }
+            if (ls == LineState.Reeling)
+            {
+                shL = -40 + Mathf.Sin(Time.time * 14) * 7;
+                elL = -55 + Mathf.Cos(Time.time * 14) * 10;
+                rod += Mathf.Sin(Time.time * 25) * 2 * tension;
+            }
+            float rate = k;
+            if (st.ch >= 0)
+            {
+                // Drawing the rod back over the shoulder.
+                float c = Mathf.SmoothStep(0, 1, st.ch);
+                shR = -105 * c; shRz = -10 * c; elR = -10 - 25 * c; rod = Mathf.Lerp(-55, -28, c);
+            }
+            else if (castT < 0.8f)
+            {
+                // The cast: a fast whip forward, then the rod settles.
+                float a = Mathf.Clamp01(castT / 0.18f), b = Mathf.SmoothStep(0, 1, Mathf.Clamp01((castT - 0.18f) / 0.6f));
+                shR = Mathf.Lerp(Mathf.Lerp(-105, -30, a), 0, b);
+                elR = Mathf.Lerp(Mathf.Lerp(-35, -5, a), -10, b);
+                rod = Mathf.Lerp(Mathf.Lerp(-28, 15, a), -20 + tension * 25, b);
+                rate = 1 - Mathf.Exp(-40 * dt);
+            }
+            Turn(3, 0, Quaternion.Euler(shL, 0, shLz), k);
+            Turn(3, 1, Quaternion.Euler(elL, 0, 0), k);
+            Turn(4, 0, Quaternion.Euler(shR, 0, shRz), rate);
+            Turn(4, 1, Quaternion.Euler(elR, 0, 0), rate);
+            rodPivot.localRotation = Quaternion.Slerp(rodPivot.localRotation, Quaternion.Euler(rod, 0, 0), rate);
+        }
+
         void OnDestroy()
         {
             if (pet) Destroy(pet.gameObject);
@@ -173,6 +288,26 @@ namespace LastCast
     public static class AnglerMesh
     {
         static readonly Dictionary<string, Mesh> cache = new Dictionary<string, Mesh>();
+
+        /// <summary>The Blender angler's joints (its limbs: 1 left leg, 2 right leg, 3 left arm, 4 right arm, 5 head): hip and knee, shoulder and elbow, neck.</summary>
+        public static readonly Dictionary<int, Vector3[]> Joints = new Dictionary<int, Vector3[]>
+        {
+            [1] = new[] { new Vector3(-0.12f, 0.9f, 0), new Vector3(-0.122f, 0.5f, 0.01f) },
+            [2] = new[] { new Vector3(0.12f, 0.9f, 0), new Vector3(0.122f, 0.5f, 0.01f) },
+            [3] = new[] { new Vector3(-0.3f, 1.42f, 0), new Vector3(-0.36f, 1.17f, 0.03f) },
+            [4] = new[] { new Vector3(0.3f, 1.42f, 0), new Vector3(0.38f, 1.22f, 0.12f) },
+            [5] = new[] { new Vector3(0, 1.52f, 0) },
+        };
+
+        /// <summary>Where the right hand grips the rod.</summary>
+        public static readonly Vector3 Hand = new Vector3(0.32f, 1.15f, 0.25f);
+
+        /// <summary>An armour set's jacket colour (or the fallback).</summary>
+        public static Color32 Jacket(string setId, string fallback)
+        {
+            var set = setId != null ? GameData.I.SetById(setId) : null;
+            return MeshKit.Hex(set?.look != null && set.look.TryGetValue("jacket", out var v) ? v : fallback);
+        }
 
         public static Mesh Build(string setId, string colour)
         {
@@ -189,10 +324,13 @@ namespace LastCast
             var hatModel = Models.Named("hat", "hat_" + hat) ?? Models.Named("hat", "hat_bucket");
             if (bodyModel && hatModel)
             {
+                // The hat goes with the head (limb 5) when it nods.
+                var hatMesh = Models.Recolour(hatModel, default, default, default, hatColour, trim);
+                hatMesh.SetUVs(0, Enumerable.Repeat(new Vector2(5, 0), hatMesh.vertexCount).ToList());
                 var combine = new[]
                 {
                     new CombineInstance { mesh = Models.Recolour(bodyModel, jacket, boots, waders), transform = Matrix4x4.identity },
-                    new CombineInstance { mesh = Models.Recolour(hatModel, default, default, default, hatColour, trim), transform = Matrix4x4.identity },
+                    new CombineInstance { mesh = hatMesh, transform = Matrix4x4.identity },
                 };
                 m = new Mesh { name = "angler " + key };
                 m.CombineMeshes(combine, true, true);

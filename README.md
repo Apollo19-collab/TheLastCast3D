@@ -51,7 +51,9 @@ Run `Game\TheLastCast.exe`. Your progress saves to
   service (free tier), linked to this project's Unity Cloud project
   (`unity-src\cloud-project.txt`). Everyone must play the same build of the game, so share
   the whole `Game` folder (zip it) with your friends.
-- Shared: everyone's angler, line and pet, catches, trophies and level-ups, chat (Enter),
+- Shared: everyone's angler (walking, running, hopping, casting and reeling as they do), line
+  and pet, where they are (a dot in their colour on the minimap and the Angler's Map, with
+  their name; anyone out at sea is listed under the map), catches, trophies and level-ups, chat (Enter),
   the hotspots, chum buckets, crowding (bobbers close together bite slower) and the map
   events, which become co-op again (goals grow with the group, everyone who helps is paid).
 - **Voyages together:** everyone who boards the same boat sails the same voyage (same stops,
@@ -88,13 +90,14 @@ creates the project in `TheLastCastFP\`, copies the game in from `unity-src\` an
 
 To check how things look without playing, run
 `Game\TheLastCast.exe -screen-fullscreen 0 -autoshot shots`: it saves screenshots of a few
-spots and menus, then a shortened voyage and boss fight, into `shots\` and quits, without
-touching your save.
+spots and menus, then a shortened voyage and boss fight, then the animations frozen at a few
+moments (each boss, and other players walking, running, casting and reeling), into `shots\`
+and quits, without touching your save.
 
 ## Models (Blender)
 
-The 3D models (trees, rocks, boats, the shops, the zoo wagon, anglers and hats, the rod, the
-fish, the 30 pets and the four bosses) are made in Blender by `blender\lastcast_models.py` and
+The 3D models (trees, rocks, boats, the shops, the zoo wagon, anglers and hats, the rod, all
+108 fish, the 30 pets and the four bosses) are made in Blender by `blender\lastcast_models.py` and
 exported as FBX into `unity-src\Assets\LastCast\Resources\Models`. To rebuild them after
 changing the script:
 
@@ -104,8 +107,18 @@ G:\Blender\blender.exe --background --factory-startup --python blender\lastcast_
 
 Add `-- tree pine` to build only some kinds, and `--preview <folder>` (with `--each` for one
 picture per model) to render previews. Parts the game colours itself (a shop's awning, an
-angler's jacket, a fish's body) are painted white with a region code in the alpha channel.
+angler's jacket and hat) are painted white with a region code in the alpha channel.
 Anything without a model falls back to the game's own code-built shapes.
+
+Each fish is its own model, built on the real species from field-guide references: its body
+plan (profile, fins, tail, mouth, barbels) and its own colours and markings (a pumpkinseed's red
+ear spot, a brook trout's haloed spots and worm-tracks, a logperch's pig snout and bars). The
+legends are built on the fish they're based on.
+
+Moving parts are tagged in the models (the UV channel holds the limb and how far along it each
+point is). The game turns them into bones (`World\LimbRig.cs`): anglers walk and cast
+(`Net\RemoteAngler.cs`), the bosses' tentacles, tails, jaws, coils and flippers move
+(`World\BossMotion.cs`), and a fish you land flaps its tail.
 
 ## What's where
 

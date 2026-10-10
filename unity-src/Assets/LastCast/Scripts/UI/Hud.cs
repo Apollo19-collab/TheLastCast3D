@@ -110,6 +110,8 @@ namespace LastCast
 
         // ---- menus ----------------------------------------------------------------------------------
 
+        bool hideAll; // AutoShot's animation poses: no HUD at all
+
         /// <summary>For AutoShot: open a menu by name.</summary>
         public void OpenForScreenshot(string key)
         {
@@ -119,6 +121,7 @@ namespace LastCast
                 "pets" => Menu.Pets, "zoo" => Menu.Zoo, "goals" => Menu.Goals, "events" => Menu.Events, "online" => Menu.Online, "title" => Menu.Title, _ => Menu.None,
             };
             scroll = Vector2.zero;
+            hideAll = key == "hidden";
         }
 
         public void OpenShop(Shop s)
@@ -265,7 +268,7 @@ namespace LastCast
 
         void OnGUI()
         {
-            if (Game.I == null || Game.I.Player == null) return;
+            if (Game.I == null || Game.I.Player == null || hideAll) return;
             Styles();
             GUI.depth = 0;
             if (Open == Menu.Title)
@@ -714,6 +717,20 @@ namespace LastCast
                 var ep = M(live.place.x, live.place.y);
                 float pulse = S(5 + Mathf.Sin(Time.time * 4) * 1.5f);
                 Icon(new Rect(ep.x - pulse, ep.y - pulse, pulse * 2, pulse * 2), "star", Skin.Hex(live.T.color));
+            }
+            // Other anglers on the lake, in their colours, pointing where they face (pinned to the edge when off the map).
+            foreach (var (st, at) in RemotesOnLake())
+            {
+                var rp = M(at.x, at.y);
+                rp = new Vector2(Mathf.Clamp(rp.x, S(5), mw - S(5)), Mathf.Clamp(rp.y, S(5), mh - S(5)));
+                var c = RemoteColour(st.col);
+                var rd = new Vector2(Mathf.Sin(st.yaw * Mathf.Deg2Rad), -Mathf.Cos(st.yaw * Mathf.Deg2Rad));
+                for (int i = 1; i <= 2; i++)
+                {
+                    var q = rp + rd * S(3 + i * 3);
+                    GUI.DrawTexture(new Rect(q.x - S(1.25f), q.y - S(1.25f), S(2.5f), S(2.5f)), Texture2D.whiteTexture, ScaleMode.StretchToFill, true, 0, c, 0, 0);
+                }
+                GUI.DrawTexture(new Rect(rp.x - S(4.5f), rp.y - S(4.5f), S(9), S(9)), Skin.Rounded(5, c, c, Color.white, 1.5f));
             }
             var mp = M(me.x, me.y);
             float yaw = Game.I.Player.Yaw * Mathf.Deg2Rad;
@@ -1635,6 +1652,26 @@ namespace LastCast
                 Icon(new Rect(ep.x - ps, ep.y - ps, ps * 2, ps * 2), "star", Skin.Hex(liveEv.T.color));
                 Shadowed(new Rect(ep.x - S(120), ep.y - S(28), S(240), S(20)), liveEv.T.name, tag, Skin.Hex(liveEv.T.color));
             }
+            // Other anglers: a dot in their colour with their name; those out at sea are listed under the map.
+            foreach (var (st, at) in RemotesOnLake())
+            {
+                var rp = M(at.x, at.y);
+                var c = RemoteColour(st.col);
+                var rd = new Vector2(Mathf.Sin(st.yaw * Mathf.Deg2Rad), -Mathf.Cos(st.yaw * Mathf.Deg2Rad));
+                for (int i = 1; i <= 3; i++)
+                {
+                    var q = rp + rd * S(6 + i * 4);
+                    GUI.DrawTexture(new Rect(q.x - S(1.5f), q.y - S(1.5f), S(3), S(3)), Texture2D.whiteTexture, ScaleMode.StretchToFill, true, 0, c, 0, 0);
+                }
+                GUI.DrawTexture(new Rect(rp.x - S(5), rp.y - S(5), S(10), S(10)), Skin.Rounded(5, c, c, Color.white, 1.5f));
+                Shadowed(new Rect(rp.x - S(80), rp.y - S(28), S(160), S(18)), st.n, tag, c);
+            }
+            var atSea = new List<string>();
+            if (Multiplayer.I != null)
+                foreach (var r in Multiplayer.I.Remotes.Values)
+                    if (r && r.State != null && Place.IsSea(new Vector3(r.State.x, r.State.y, r.State.z))) atSea.Add(r.State.n);
+            if (atSea.Count > 0)
+                Label(new Rect(0, y0 + mh + S(12), W, S(18)), "Out at sea: " + string.Join(", ", atSea), smallDim, null, TextAnchor.MiddleCenter);
             var me = Game.I.Player.WorldPos;
             var mp = M(me.x, me.y);
             float pulse = S(9 + Mathf.Sin(Time.time * 4) * 3);
@@ -1647,6 +1684,20 @@ namespace LastCast
                 GUI.DrawTexture(new Rect(q.x - S(2), q.y - S(2), S(4), S(4)), Texture2D.whiteTexture);
             }
             Shadowed(new Rect(mp.x - S(40), mp.y - S(32), S(80), S(18)), "You", tag, Skin.Gold);
+        }
+
+        /// <summary>The other anglers who are on the lake (not out at sea), with where they are in world units.</summary>
+        static IEnumerable<(AnglerState st, Vector2 at)> RemotesOnLake()
+        {
+            var mp = Multiplayer.I;
+            if (mp == null || !mp.Online) yield break;
+            foreach (var r in mp.Remotes.Values)
+            {
+                if (!r || r.State == null) continue;
+                var p = r.transform.position; // smoothed, so the dots glide rather than jump
+                if (Place.IsSea(p)) continue;
+                yield return (r.State, WorldMap.I.ToWorld(p));
+            }
         }
 
         Texture2D BuildMapTexture()

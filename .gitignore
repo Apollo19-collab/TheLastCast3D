@@ -10,3 +10,4 @@
 # Test output
 /shots/
 /test/
+__pycache__/

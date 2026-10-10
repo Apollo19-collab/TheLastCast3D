@@ -43,6 +43,8 @@ namespace LastCast
         public int c; // catches this session
         public float best; // heaviest this session
         public long vy; // the voyage they're on (or booked on, aboard at the dock): its departure time; 0 on the lake
+        public float ch = -1; // how far a cast is charged (0..1), or -1 when not charging
+        public bool sp; // sprinting
     }
 
     public class Multiplayer : MonoBehaviour
@@ -400,6 +402,7 @@ namespace LastCast
                 pet = prof.pet, rod = prof.equipped["rod"], hat = body != null ? GameData.I.Piece(body).set?.id : null,
                 c = SessionCatches, best = SessionBest,
                 vy = Voyage.I == null ? 0 : Voyage.I.AtSea ? Voyage.I.Id : Voyage.I.Boarded,
+                ch = f.Charge, sp = p.Sprinting,
             };
             Send(StateMsg, JsonConvert.SerializeObject(st), NetworkDelivery.UnreliableSequenced);
         }

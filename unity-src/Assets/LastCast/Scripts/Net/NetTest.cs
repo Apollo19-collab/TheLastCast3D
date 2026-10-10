@@ -63,7 +63,16 @@ namespace LastCast
                 g.Hud.OpenForScreenshot("none");
                 yield return new WaitForSeconds(1);
                 ScreenCapture.CaptureScreenshot(Path.Combine(folder, "host.png"));
-                yield return new WaitForSeconds(6);
+                // The joiner walks off a little way: they should show on the minimap and the Angler's Map.
+                yield return new WaitForSeconds(5);
+                ScreenCapture.CaptureScreenshot(Path.Combine(folder, "host-minimap.png"));
+                yield return new WaitForSeconds(0.5f);
+                g.Hud.OpenForScreenshot("map");
+                yield return new WaitForSeconds(1);
+                ScreenCapture.CaptureScreenshot(Path.Combine(folder, "host-map.png"));
+                yield return new WaitForSeconds(0.5f);
+                g.Hud.OpenForScreenshot("none");
+                yield return new WaitForSeconds(1);
                 if (voyage)
                 {
                     File.WriteAllText(Path.Combine(folder, "voyage.txt"), ((long)MapEvents.Now + 55).ToString());
@@ -90,7 +99,9 @@ namespace LastCast
                 Log($"remotes: {mp.Remotes.Count}");
                 yield return new WaitForSeconds(5);
                 ScreenCapture.CaptureScreenshot(Path.Combine(folder, "join.png"));
-                yield return new WaitForSeconds(10);
+                yield return new WaitForSeconds(1);
+                g.Player.Init(spawn + Vector3.right * 45 + Vector3.forward * 30, 90);
+                yield return new WaitForSeconds(9);
                 if (voyage) yield return VoyageTest();
             }
             Log("done");
