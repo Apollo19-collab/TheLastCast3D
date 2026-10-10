@@ -7,7 +7,7 @@ namespace LastCast
 {
     public static class GameVersion
     {
-        public const string Current = "1.0.0";
+        public const string Current = "1.1.0";
         public const string Repo = "Apollo19-collab/TheLastCast3D";
         public const string ZipName = "TheLastCast-Windows.zip";
     }
