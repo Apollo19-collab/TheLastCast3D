@@ -5,6 +5,7 @@
 using System.Collections;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using UnityEngine;
 
 namespace LastCast
@@ -335,6 +336,33 @@ namespace LastCast
                 yield return Shot($"25-pose-anglers-{k}");
             }
             foreach (var r in anglers) Destroy(r.gameObject);
+
+            // The pets, all moving (walking, flying or swimming), side on.
+            var pets = new List<(Transform t, Vector3 at)>();
+            var ids = GameData.I.pets.Select(pt => pt.id).ToList();
+            for (int i = 0; i < ids.Count; i++)
+            {
+                var holder = new GameObject("Pose pet").transform;
+                var at = studio + new Vector3((i % 6) * 1.7f, -(i / 6) * 1.5f + (PetMeshes.LookOf(ids[i]).motion == PetMeshes.Motion.Walk ? 0 : 0.3f), 30);
+                holder.position = at;
+                holder.rotation = Quaternion.Euler(0, 90, 0);
+                PetAnimator.Create(holder, ids[i]);
+                pets.Add((holder, at));
+            }
+            camGo.transform.position = studio + new Vector3(4.3f, -2.6f, 22.5f);
+            camGo.transform.LookAt(studio + new Vector3(4.3f, -2.9f, 30));
+            cam.fieldOfView = 50;
+            for (int k = 0; k < 2; k++)
+            {
+                float until = Time.time + 0.9f + k * 0.17f;
+                while (Time.time < until)
+                {
+                    foreach (var (t, at) in pets) t.position = at + Vector3.right * Mathf.PingPong(Time.time * 2, 0.5f); // pacing to and fro
+                    yield return null;
+                }
+                yield return Shot($"26-pose-pets-{k}");
+            }
+            foreach (var (t, _) in pets) Destroy(t.gameObject);
             Destroy(camGo);
         }
 

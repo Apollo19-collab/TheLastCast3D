@@ -41,13 +41,16 @@ namespace LastCast
         /// <summary>
         /// Skin a model onto go with a bone chain per limb: `bones` bones down each limb's middle, or at the
         /// joints given for a limb. hard: each vertex follows one bone (a knee or an elbow bends sharply) rather
-        /// than blending between neighbours (a tentacle bends smoothly). Returns null if the model has no limbs.
+        /// than blending between neighbours (a tentacle bends smoothly). bonesFor: a limb's own number of bones; rooted: joints at
+        /// the start of each stretch (so a leg turns at the hip); tag: tells apart rigs of one mesh made with different bonesFor.
+        /// Returns null if the model has no limbs.
         /// </summary>
-        public static LimbRig Attach(GameObject go, Mesh src, Material material, int bones = 8, Dictionary<int, Vector3[]> joints = null, bool hard = false)
+        public static LimbRig Attach(GameObject go, Mesh src, Material material, int bones = 8, Dictionary<int, Vector3[]> joints = null, bool hard = false,
+            System.Func<int, int> bonesFor = null, bool rooted = false, string tag = null)
         {
             if (!HasLimbs(src)) return null;
-            var key = (src, $"{bones}|{hard}|" + (joints == null ? "" : string.Join(";", joints.OrderBy(j => j.Key).Select(j => j.Key + ":" + string.Join(",", j.Value)))));
-            if (!cache.TryGetValue(key, out var built)) cache[key] = built = Build(src, bones, joints, hard);
+            var key = (src, $"{bones}|{hard}|{rooted}|{tag}|" + (joints == null ? "" : string.Join(";", joints.OrderBy(j => j.Key).Select(j => j.Key + ":" + string.Join(",", j.Value)))));
+            if (!cache.TryGetValue(key, out var built)) cache[key] = built = Build(src, bones, joints, hard, bonesFor, rooted);
 
             var rig = go.AddComponent<LimbRig>();
             rig.Root = new GameObject("Bones").transform;
@@ -108,7 +111,7 @@ namespace LastCast
             return best;
         }
 
-        static (Mesh, Vector3[][]) Build(Mesh src, int bones, Dictionary<int, Vector3[]> given, bool hard)
+        static (Mesh, Vector3[][]) Build(Mesh src, int defaultBones, Dictionary<int, Vector3[]> given, bool hard, System.Func<int, int> bonesFor, bool rooted)
         {
             var uv = new List<Vector2>();
             src.GetUVs(0, uv);
@@ -119,13 +122,16 @@ namespace LastCast
             for (int l = 1; l <= limbs; l++)
             {
                 if (given != null && given.TryGetValue(l, out var j)) { joints[l] = j; continue; }
+                int bones = Mathf.Max(1, bonesFor?.Invoke(l) ?? defaultBones);
                 // Down the limb's middle: the centre of each stretch of it.
                 var sum = new Vector3[bones];
                 var count = new int[bones];
                 for (int i = 0; i < verts.Length; i++)
                 {
                     if (Mathf.RoundToInt(uv[i].x) != l) continue;
-                    int b = Mathf.Clamp((int)(uv[i].y * bones), 0, bones - 1);
+                    // Each bone at the middle of its stretch of the limb, or (rooted) at its start: a hip, a shoulder, the root of a wing.
+                    int b = rooted ? Mathf.Clamp(Mathf.RoundToInt(uv[i].y * bones), 0, bones - 1) : Mathf.Clamp((int)(uv[i].y * bones), 0, bones - 1);
+                    if (rooted && Mathf.Abs(uv[i].y * bones - b) > 0.15f) continue; // only the points right at the joint
                     sum[b] += verts[i];
                     count[b]++;
                 }
@@ -161,9 +167,11 @@ namespace LastCast
                     weights[i] = new BoneWeight { boneIndex0 = first[l] + Mathf.Clamp((int)(t * n), 0, n - 1), weight0 = 1 };
                     continue;
                 }
-                float f = t * n - 0.5f;
+                // Blending between neighbours round each joint (rooted: each stretch on its own bone, blending just before the next joint).
+                float f = rooted ? t * n : t * n - 0.5f;
                 int s = Mathf.FloorToInt(f);
                 float w = f - s;
+                if (rooted) w = Mathf.SmoothStep(0, 1, (w - 0.65f) / 0.35f);
                 if (s < 0) weights[i] = new BoneWeight { boneIndex0 = first[l], weight0 = 1 };
                 else if (s >= n - 1) weights[i] = new BoneWeight { boneIndex0 = first[l] + n - 1, weight0 = 1 };
                 else weights[i] = new BoneWeight { boneIndex0 = first[l] + s, weight0 = 1 - w, boneIndex1 = first[l] + s + 1, weight1 = w };

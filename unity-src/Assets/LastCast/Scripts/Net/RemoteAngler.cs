@@ -27,7 +27,7 @@ namespace LastCast
         public Vector3? TestVelocity;
         public void RestartCast() => castT = 0;
         Transform rodPivot, rodTip, pet;
-        MeshFilter petMesh;
+        PetAnimator petBody;
         string petShown;
         TextMesh tag;
         LineRenderer line;
@@ -94,8 +94,6 @@ namespace LastCast
             bobber.SetActive(false);
 
             pet = new GameObject("Pet").transform;
-            petMesh = pet.gameObject.AddComponent<MeshFilter>();
-            pet.gameObject.AddComponent<MeshRenderer>().sharedMaterial = WorldBuilder.LitMaterial;
         }
 
         public void Apply(AnglerState st)
@@ -159,7 +157,8 @@ namespace LastCast
             if (State.pet != petShown)
             {
                 petShown = State.pet;
-                petMesh.sharedMesh = State.pet != null ? PetMeshes.Build(State.pet) : null;
+                if (petBody) Destroy(petBody.gameObject);
+                petBody = State.pet != null ? PetAnimator.Create(pet, State.pet) : null;
             }
             if (State.pet != null)
             {

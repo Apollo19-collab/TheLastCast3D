@@ -2803,320 +2803,680 @@ def fish(i):
     return k.build(f'fish_{name}', ao=0.12)
 
 # ---- pets ---------------------------------------------------------------------------------------------------
-# The 30 pets, in their own colours (World/PetMeshes.cs Looks): (plan, body, accent, extra, size, feature).
-# Each faces +Y, standing on z = 0, about half a metre tall (s = 0.25 x size).
+# The 30 pets, each modelled on the animal (the legends on the creature they're named for): a proper body,
+# head and face (big glossy eyes with an iris and a glint, nose, mouth, whiskers), ears, legs and paws or
+# hooves, tails, wings, fins and shells, in the pet's colours with its own markings. Each faces +Y, standing
+# on z = 0, about half a metre tall (s = 0.25 x size). Limbs (the game animates them, Player/PetCompanion.cs):
+#   1 front left leg, 2 front right, 3 back left (a bird's left leg), 4 back right, 5 left wing / flipper /
+#   fin / claw, 6 right, 7 the tail (or a serpent's body), 8 the head and neck, 9-16 tentacles or crab legs.
 
-PETS = {
-    'lilyfrog': ('frog', '#6ab04c', '#f6e58d', None, 1, None),
-    'duckling': ('bird', '#ffd60a', '#f77f00', None, 0.7, None),
-    'sandcrab': ('crab', '#e76f51', '#f4a261', None, 1, None),
-    'snail': ('snail', '#d4c4a8', '#c08552', None, 1, None),
-    'fieldmouse': ('quad', '#9e9e9e', '#ffafcc', None, 0.6, 'mouse'),
-    'otterpup': ('quad', '#7b5b3a', '#c8a27c', None, 0.9, 'long'),
-    'flamingo': ('bird', '#ff8fab', '#1b1b1b', None, 1.1, 'tall'),
-    'hermit': ('hermit', '#e76f51', '#e9c46a', None, 1, None),
-    'turtle': ('turtle', '#90a955', '#4f772d', None, 1, None),
-    'kingfisher': ('bird', '#1e88e5', '#f77f00', None, 0.8, None),
-    'raccoon': ('quad', '#8d8d8d', '#2b2b2b', '#e0e0e0', 1, 'mask'),
-    'owl': ('bird', '#a47148', '#f1e3c8', None, 1, 'round'),
-    'beaver': ('quad', '#6f4518', '#3b2410', None, 1, 'flat-tail'),
-    'penguin': ('bird', '#1b1b1b', '#f1f1f1', '#f77f00', 1, 'upright'),
-    'seal': ('seal', '#9aa5b1', '#6c757d', None, 1, None),
-    'snowfox': ('quad', '#f1f1f1', '#cfd8dc', None, 1, 'bushy'),
-    'eagle': ('bird', '#5c3d2e', '#f1f1f1', '#ffb703', 1.2, None),
-    'grizzly': ('quad', '#6d4c41', '#4e342e', None, 1.3, 'bear'),
-    'octopus': ('octopus', '#e56b6f', '#b5838d', None, 1, None),
-    'parrot': ('bird', '#e63946', '#1e88e5', '#ffd166', 1, None),
-    'dragon': ('quad', '#2a9d8f', '#e9c46a', '#e76f51', 1.1, 'wings'),
-    'peacock': ('bird', '#1e88e5', '#2a9d8f', '#ffd166', 1.1, 'fan'),
-    'kraken': ('octopus', '#6a0dad', '#c77dff', None, 1, None),
-    'unicorn': ('quad', '#f8f9fa', '#ff8fab', '#ffd166', 1.2, 'horn'),
-    'spiritkoi': ('fish', '#fdfcdc', '#f77f00', None, 1.1, None),
-    'phoenix': ('bird', '#ff7b00', '#ffba08', '#d00000', 1.1, 'fan'),
-    'wyrmling': ('serpent', '#3a86a8', '#90e0ef', None, 1.1, None),
-    'qilin': ('quad', '#ffd166', '#e76f51', '#2a9d8f', 1.2, 'antlers'),
-    'moonmoth': ('moth', '#bde0fe', '#a2d2ff', '#f1f1f1', 1, None),
-    'starwhale': ('fish', '#3a0ca3', '#bde0fe', None, 1.4, 'spots'),
+PET_IDS = ['lilyfrog', 'duckling', 'sandcrab', 'snail', 'fieldmouse', 'otterpup', 'flamingo', 'hermit', 'turtle', 'kingfisher',
+           'raccoon', 'owl', 'beaver', 'penguin', 'seal', 'snowfox', 'eagle', 'grizzly', 'octopus', 'parrot', 'dragon', 'peacock',
+           'kraken', 'unicorn', 'spiritkoi', 'phoenix', 'wyrmling', 'qilin', 'moonmoth', 'starwhale']
+PET_SIZE = {'duckling': 0.7, 'fieldmouse': 0.6, 'otterpup': 0.9, 'flamingo': 1.1, 'kingfisher': 0.8, 'eagle': 1.2, 'grizzly': 1.3,
+            'dragon': 1.1, 'peacock': 1.1, 'unicorn': 1.2, 'spiritkoi': 1.1, 'phoenix': 1.1, 'wyrmling': 1.1, 'qilin': 1.2, 'starwhale': 1.4}
+
+WHITE, BLACK, GLINT = hexc('#fbfbf6'), hexc('#121212'), hexc('#ffffff')
+
+def pet_eye(k, p, n, r, iris, lid=None):
+    """A big glossy eye on a surface point p facing n: the white, an iris, the pupil and a glint (and a lid)."""
+    n = Vector(n).normalized()
+    up = Vector((0, 0, 1))
+    side = n.cross(up).normalized() if abs(n.z) < 0.95 else Vector((1, 0, 0))
+    k.ico(p - n * r * 0.35, r, WHITE, subdiv=2, rough=0, jitter=0)
+    k.ico(p + n * r * 0.32, r * 0.74, iris, subdiv=2, rough=0, jitter=0)
+    k.ico(p + n * r * 0.6, r * 0.45, BLACK, subdiv=2, rough=0, jitter=0)
+    k.ico(p + n * r * 0.88 + up * r * 0.3 + side * r * 0.2, r * 0.17, GLINT, subdiv=1, rough=0, jitter=0)
+    if lid:
+        k.ico(p - n * r * 0.25 + up * r * 0.35, (r * 1.08, r * 1.08, r * 0.7), lid, subdiv=1, rough=0)
+
+def limb_leg(k, limb, top, knee, foot, r, col):
+    with k.limb(limb, along([top, knee, foot])):
+        k.tube_r([top, knee, foot], [r[0], r[1], r[2]], col, sides=8)
+
+# -- four-legged animals ---------------------------------------------------------------------------------------
+
+QUADS = {
+    'fieldmouse': dict(L=0.95, W=0.42, H=0.4, leg=0.22, R=0.48, snout=1.05, ears='round', tail='thin', body='#9e9e9e', belly='#efe9e1',
+                       accent='#ffafcc', nose='#ff8fab', iris='#2b1a10', whiskers=True),
+    'otterpup': dict(L=1.65, W=0.42, H=0.38, leg=0.26, R=0.44, snout=0.75, ears='tiny', tail='otter', body='#7b5b3a', belly='#c8a27c',
+                     accent='#5a3e24', nose='#2b1a10', iris='#2b1a10', whiskers=True, muzzle='#d8b892'),
+    'raccoon': dict(L=1.2, W=0.55, H=0.5, leg=0.42, R=0.5, snout=0.85, ears='pointed', tail='ringed', body='#8d8d8d', belly='#bdbdbd',
+                    accent='#2b2b2b', extra='#e9e9e9', nose='#1b1b1b', iris='#3b2a1a', whiskers=True, mask=True, muzzle='#e9e9e9'),
+    'beaver': dict(L=1.25, W=0.66, H=0.6, leg=0.28, R=0.52, snout=0.75, ears='tiny', tail='flat', body='#6f4518', belly='#8b5a2b',
+                   accent='#3b2410', nose='#1b1b1b', iris='#1b1b1b', whiskers=True, teeth=True, muzzle='#9a6a3a'),
+    'snowfox': dict(L=1.25, W=0.45, H=0.45, leg=0.55, R=0.48, snout=1.15, ears='pointed', tail='bushy', body='#f1f1f1', belly='#ffffff',
+                    accent='#cfd8dc', nose='#1b1b1b', iris='#c79a3a', whiskers=True, ruff=True),
+    'grizzly': dict(L=1.45, W=0.75, H=0.68, leg=0.6, R=0.55, snout=0.95, ears='round', tail='stub', body='#6d4c41', belly='#5d4037',
+                    accent='#4e342e', nose='#1b1b1b', iris='#2b1a10', muzzle='#a1887f', hump=True, claws=True),
+    'unicorn': dict(L=1.35, W=0.5, H=0.52, leg=1.05, R=0.42, snout=1.5, ears='long', tail='flowing', body='#f8f9fa', belly='#eef0f2',
+                    accent='#ff8fab', extra='#ffd166', nose='#d8c8d0', iris='#7b5cc7', neck=0.75, mane='#ff8fab', horn=True, hooves='#ffd166'),
+    'qilin': dict(L=1.35, W=0.5, H=0.52, leg=1.0, R=0.42, snout=1.35, ears='long', tail='flowing', body='#ffd166', belly='#ffe8a8',
+                  accent='#e76f51', extra='#2a9d8f', nose='#5a3e24', iris='#2a9d8f', neck=0.7, mane='#2a9d8f', antlers=True, hooves='#2a9d8f',
+                  scales=True, spines=True),
+    'dragon': dict(L=1.35, W=0.55, H=0.52, leg=0.5, R=0.48, snout=1.2, ears='horns', tail='spade', body='#2a9d8f', belly='#e9c46a',
+                   accent='#e9c46a', extra='#e76f51', nose='#1b4a44', iris='#ffd166', wings=True, spines=True, scales=True, claws=True, muzzle='#2f8f83'),
 }
-PET_IDS = list(PETS)
 
-def pet_eyes(k, head, r, spread=0.55, up=0.3, size=0.24):
-    """Big glossy eyes on the front of a round head of radius r."""
-    head = Vector(head)
-    for sx in (-1, 1):
-        d = Vector((sx * spread, 1, up)).normalized()
-        p = head + d * r * 0.86
-        k.ico(p, r * size, hexc('#fdfdfd'), subdiv=1, rough=0)
-        k.ico(p + d * r * size * 0.55, r * size * 0.62, hexc('#151515'), subdiv=1, rough=0)
-        k.ico(p + d * r * size * 0.95 + Vector((sx * r * 0.04, 0, r * size * 0.3)), r * size * 0.2, hexc('#ffffff'), subdiv=1, rough=0)
+def quad_pet(k, pid, q, s):
+    c = {key: hexc(v) for key, v in q.items() if isinstance(v, str) and v.startswith('#')}
+    body, belly, accent = c['body'], c['belly'], c['accent']
+    extra = c.get('extra', accent)
+    L, W, H, leg, R = q['L'] * s, q['W'] * s, q['H'] * s, q['leg'] * s, q['R'] * s
+    z0 = leg + H * 0.85
+    off = Vector((k.rnd.random() * 9, k.rnd.random() * 9, k.rnd.random() * 9))
+
+    def coat(p, n):
+        if n.z < -0.45:
+            return belly
+        if q.get('scales') and noise.noise(p * (9 / s) + off) > 0.25:
+            return accent if pid == 'qilin' else shade(body, 0.85)
+        return body if n.z < 0.75 else shade(body, 0.94)
+
+    hump = H * 0.25 if q.get('hump') else 0
+    k.loft([(-L * 0.5, W * 0.5, H * 0.6, z0 + H * 0.08), (-L * 0.32, W * 0.95, H * 0.95, z0), (0, W, H, z0),
+            (L * 0.28, W * 0.96, H * 0.98 + hump, z0 + 0.06 * H + hump * 0.5), (L * 0.5, W * 0.62, H * 0.72, z0 + 0.15 * H)], coat, sides=14)
+    if q.get('ruff'):  # a fluffy chest
+        k.blob([((0, L * 0.45, z0 - H * 0.1), (W * 0.8, W * 0.6, H * 0.8), WHITE, 1, 0.12, 2.0)], 0.03 * s * 4, 0.35, lambda f: hexc('#ffffff'))
+    # Neck and head (limb 8).
+    neck_len = q.get('neck', 0.25) * s
+    nb = Vector((0, L * 0.4, z0 + H * 0.35))
+    hc = nb + Vector((0, R * 0.8 + neck_len * 0.55, R * 0.7 + neck_len * 0.9))
+    snout = q['snout']
+    mc = hc + Vector((0, R * (0.55 + 0.45 * snout), -R * 0.3))
+    tip = mc + Vector((0, R * 0.42 * snout, R * 0.05))
+    with k.limb(8, along([nb, hc, tip])):
+        k.tube_r([nb, nb.lerp(hc, 0.55), hc - Vector((0, R * 0.3, R * 0.25))], [W * 0.62, R * 0.62, R * 0.6], body, sides=10)
+        muzzle = c.get('muzzle', belly)
+
+        def face(f):
+            p, n = f.calc_center_median(), f.normal
+            if q.get('mask') and abs(p.z - (hc.z + R * 0.12)) < R * 0.22 and p.y > hc.y and abs(p.x) > R * 0.12:
+                return accent
+            if p.y > hc.y + R * 0.45 or n.z < -0.55:
+                return muzzle
+            return body
+
+        k.blob([(hc, (R * 0.92, R, R * 0.9), body, 2, 0.02, 1.0), (mc, (R * 0.48, R * 0.55 * max(1, snout * 0.9), R * 0.42), body, 2, 0.02, 1.0)],
+               0.06 * s, 0.32, face)
+        k.ico(tip, (R * 0.17, R * 0.12, R * 0.12), c['nose'], subdiv=2, rough=0)
+        k.box(tip + Vector((0, -R * 0.05, -R * 0.22)), (R * 0.32, R * 0.03, R * 0.03), shade(c['nose'], 0.7))
+        for sx in (-1, 1):
+            n = Vector((sx * 0.62, 0.72, 0.28)).normalized()
+            pet_eye(k, hc + n * R * 0.86 + Vector((0, R * 0.05, R * 0.06)), n, R * 0.24, c['iris'])
+            if q.get('whiskers'):
+                for j in range(3):
+                    a = mc + Vector((sx * R * 0.4, R * 0.25 * snout, -R * 0.05 - j * R * 0.06))
+                    k.tube([a, a + Vector((sx * R * 0.7, R * 0.08, 0.05 * R - j * R * 0.1))], R * 0.012, R * 0.006, hexc('#3a3a3a') if pid != 'snowfox' else hexc('#9aa0a6'), sides=3)
+            ear = q['ears']
+            base = hc + Vector((sx * R * 0.5, -R * 0.15, R * 0.68))
+            if ear == 'pointed':
+                k.fin([base + Vector((sx * -R * 0.2, 0, 0)), base + Vector((sx * R * 0.2, 0, 0)), base + Vector((sx * R * 0.18, -R * 0.05, R * 0.75))], R * 0.08, body)
+                k.fin([base + Vector((sx * -R * 0.1, R * 0.05, R * 0.06)), base + Vector((sx * R * 0.12, R * 0.05, R * 0.06)),
+                       base + Vector((sx * R * 0.14, R * 0.0, R * 0.55))], R * 0.04, accent if pid != 'raccoon' else extra)
+            elif ear == 'round':
+                k.ico(base + Vector((sx * R * 0.12, 0, R * 0.08)), (R * 0.36, R * 0.12, R * 0.36), body, subdiv=2, rough=0)
+                k.ico(base + Vector((sx * R * 0.12, R * 0.07, R * 0.08)), (R * 0.24, R * 0.06, R * 0.24), accent, subdiv=1, rough=0)
+            elif ear == 'long':
+                k.fin([base, base + Vector((sx * R * 0.25, 0, 0)), base + Vector((sx * R * 0.2, -R * 0.1, R * 0.7))], R * 0.07, body)
+            elif ear == 'tiny':
+                k.ico(base + Vector((sx * R * 0.12, 0, -R * 0.08)), (R * 0.16, R * 0.08, R * 0.14), shade(body, 0.85), subdiv=1, rough=0)
+            elif ear == 'horns':
+                k.tube(curve([base, base + Vector((sx * R * 0.15, -R * 0.35, R * 0.45)), base + Vector((sx * R * 0.1, -R * 0.85, R * 0.6))], 3), R * 0.11, R * 0.015, extra, sides=6)
+        if q.get('teeth'):
+            for sx in (-1, 1):
+                k.box(tip + Vector((sx * R * 0.06, -R * 0.06, -R * 0.33)), (R * 0.1, R * 0.05, R * 0.2), hexc('#f4a261'))
+        if q.get('horn'):  # a spiral horn
+            hb = hc + Vector((0, R * 0.35, R * 0.75))
+            pts = [hb + Vector((0, 0.18 * R * t, 1.5 * R * t)) for t in [j / 8 for j in range(9)]]
+            k.tube(pts, R * 0.16, R * 0.01, extra, sides=6)
+            for j in range(6):
+                t = (j + 0.5) / 7
+                k.tube_r([pts[0].lerp(pts[-1], t) - Vector((0, 0, R * 0.03)), pts[0].lerp(pts[-1], t) + Vector((0, 0, R * 0.03))],
+                         [R * 0.17 * (1 - t) + R * 0.02, R * 0.17 * (1 - t) + R * 0.02], shade(extra, 0.85), sides=6, cap=False)
+        if q.get('antlers'):
+            for sx in (-1, 1):
+                b0 = hc + Vector((sx * R * 0.35, -R * 0.05, R * 0.75))
+                pts = curve([b0, b0 + Vector((sx * R * 0.25, -R * 0.2, R * 0.6)), b0 + Vector((sx * R * 0.55, -R * 0.55, R * 1.1))], 3)
+                k.tube(pts, R * 0.08, R * 0.025, extra, sides=5)
+                for j, t in enumerate((0.35, 0.65)):
+                    p = Vector(pts[int(t * (len(pts) - 1))])
+                    k.tube([p, p + Vector((sx * R * 0.25, R * 0.15, R * 0.3))], R * 0.05, R * 0.015, extra, sides=4)
+        if q.get('mane'):
+            m = hexc(q['mane'])
+            for j in range(7):
+                p = nb.lerp(hc - Vector((0, R * 0.4, -R * 0.4)), j / 6) + Vector((0, -R * 0.2, R * 0.62))
+                k.fin([p + Vector((0, R * 0.2, -R * 0.1)), p + Vector((0, -R * 0.55, R * 0.5)), p + Vector((0, -R * 0.45, -R * 0.35))], R * 0.14, m if j % 2 else shade(m, 0.85))
+    # Legs (1-4), with paws, hooves or claws.
+    for limb, sx, y in ((1, -1, 0.3), (2, 1, 0.3), (3, -1, -0.3), (4, 1, -0.3)):
+        top = Vector((sx * W * 0.58, y * L, z0 - H * 0.25))
+        foot = Vector((sx * W * 0.62, y * L + 0.03 * s, 0.07 * s))
+        knee = top.lerp(foot, 0.5) + Vector((0, (0.06 if y > 0 else -0.08) * s, 0))
+        r0 = W * (0.42 if q.get('hump') else 0.34)
+        with k.limb(limb, along([top, knee, foot])):
+            k.tube_r([top, knee, foot], [r0, r0 * 0.65, r0 * 0.5], body if not q.get('hooves') else body, sides=8)
+            if q.get('hooves'):
+                k.cyl(foot + Vector((0, 0, -0.05 * s)), foot + Vector((0, 0.01 * s, 0.07 * s)), r0 * 0.58, r0 * 0.5, hexc(q['hooves']), sides=8)
+            else:
+                k.ico(foot + Vector((0, 0.05 * s, -0.02 * s)), (r0 * 0.75, r0 * 0.95, r0 * 0.45), shade(body, 0.9) if pid != 'raccoon' else accent, subdiv=2, rough=0)
+                if q.get('claws'):
+                    for j in (-1, 0, 1):
+                        p = foot + Vector((j * r0 * 0.35, r0 * 0.9, -0.01 * s))
+                        k.cyl(p, p + Vector((0, r0 * 0.4, -0.02 * s)), r0 * 0.12, 0.0, hexc('#efe9e1'), sides=4)
+    # The tail (7).
+    tr = Vector((0, -L * 0.48, z0 + H * 0.25))
+    kind = q['tail']
+    if kind == 'thin':
+        pts = curve([tr, tr + Vector((0, -L * 0.6, -H * 0.2)), tr + Vector((L * 0.25, -L * 1.1, H * 0.2)), tr + Vector((L * 0.4, -L * 1.3, H * 0.6))], 4)
+        with k.limb(7, along(pts)):
+            k.tube(pts, 0.05 * s, 0.015 * s, accent, sides=5)
+    elif kind == 'otter':
+        pts = curve([tr, tr + Vector((0, -L * 0.4, -H * 0.3)), tr + Vector((0, -L * 0.75, -H * 0.5))], 4)
+        with k.limb(7, along(pts)):
+            k.tube(pts, W * 0.45, 0.04 * s, body, sides=8)
+    elif kind == 'ringed':
+        pts = curve([tr, tr + Vector((0, -L * 0.35, H * 0.15)), tr + Vector((0, -L * 0.75, H * 0.05)), tr + Vector((0, -L * 1.0, -H * 0.15))], 4)
+        with k.limb(7, along(pts)):
+            faces = k.tube_r(pts, [W * 0.3 + W * 0.12 * math.sin(j / (len(pts) - 1) * math.pi) for j in range(len(pts))], body, sides=8)
+            for f in faces:
+                t = along(pts)(f.calc_center_median())
+                if int(t * 8) % 2 == 1:
+                    k.paint([f], accent, 0.03)
+    elif kind == 'flat':
+        pts = [tr, tr + Vector((0, -L * 0.35, -H * 0.45))]
+        with k.limb(7, along(pts + [tr + Vector((0, -L * 0.85, -H * 0.6))])):
+            k.tube(pts, W * 0.25, W * 0.2, accent, sides=6)
+            paddle = [(x * W * 0.55, -L * 0.35 - (1 - x * x) ** 0.5 * L * 0.0 + y * L * 0.5, 0) for x, y in ((-0.6, 0), (-1, -0.3), (-0.9, -0.8), (0, -1), (0.9, -0.8), (1, -0.3), (0.6, 0))]
+            k.fin([tr + Vector((p[0], p[1], -H * 0.48)) for p in paddle], 0.05 * s, accent)
+            for j in range(6):
+                k.box(tr + Vector((0, -L * 0.42 - j * L * 0.07, -H * 0.45)), (W * 0.9, 0.01 * s, 0.01 * s), shade(accent, 0.7))
+    elif kind == 'bushy':
+        pts = curve([tr, tr + Vector((0, -L * 0.4, H * 0.1)), tr + Vector((0, -L * 0.85, H * 0.45)), tr + Vector((0, -L * 1.1, H * 0.8))], 4)
+        with k.limb(7, along(pts)):
+            k.blob([(Vector(p), (W * 0.42 * (0.6 + math.sin(j / (len(pts) - 1) * math.pi * 0.9)), W * 0.5, W * 0.42 * (0.6 + math.sin(j / (len(pts) - 1) * math.pi * 0.9))), body, 1, 0.1, 2.0)
+                    for j, p in enumerate(pts) if j % 2 == 0], 0.05 * s, 0.35,
+                   lambda f: hexc('#ffffff') if along(pts)(f.calc_center_median()) > 0.8 else body)
+    elif kind == 'stub':
+        with k.limb(7, lambda co: 0.5):
+            k.ico(tr + Vector((0, -0.05 * s, 0)), 0.14 * s, body, subdiv=1, rough=0.1)
+    elif kind == 'flowing':
+        m = hexc(q.get('mane', q['accent']))
+        pts = curve([tr, tr + Vector((0, -L * 0.25, -H * 0.1)), tr + Vector((0, -L * 0.45, -H * 0.8)), tr + Vector((0, -L * 0.55, -H * 1.6))], 4)
+        with k.limb(7, along(pts)):
+            k.tube(pts[:3], W * 0.18, W * 0.14, body, sides=6)
+            for j in range(5):
+                a = (j - 2) * 0.25
+                p0 = Vector(pts[2])
+                k.tube([p0, p0 + Vector((a * L * 0.2, -L * 0.15, -H * 0.6)), p0 + Vector((a * L * 0.35, -L * 0.25, -H * 1.3))], W * 0.12, W * 0.02, m if j % 2 else shade(m, 0.85), sides=5)
+    elif kind == 'spade':
+        pts = curve([tr, tr + Vector((0, -L * 0.5, -H * 0.2)), tr + Vector((L * 0.2, -L * 1.0, 0)), tr + Vector((L * 0.3, -L * 1.4, H * 0.3))], 4)
+        with k.limb(7, along(pts)):
+            k.tube(pts, W * 0.4, 0.04 * s, body, sides=8)
+            e = Vector(pts[-1])
+            k.fin([e + Vector((0, 0.05 * s, 0)), e + Vector((-0.16 * s, -0.08 * s, 0.05 * s)), e + Vector((0, -0.25 * s, 0.1 * s)), e + Vector((0.16 * s, -0.08 * s, 0.05 * s))], 0.03 * s, extra)
+    if q.get('spines'):
+        for j in range(7):
+            y = L * (0.45 - j * 0.15)
+            k.cyl((0, y, z0 + H * 0.92), (0, y - 0.05 * s, z0 + H * 0.92 + 0.18 * s), 0.08 * s, 0.0, extra if pid == 'dragon' else hexc(q['mane']), sides=4)
+    if q.get('wings'):  # leathery wings (5, 6): bony fingers with membrane between
+        for limb, sx in ((5, -1), (6, 1)):
+            root = Vector((sx * W * 0.55, L * 0.15, z0 + H * 0.6))
+            tip = root + Vector((sx * 1.9 * s, -0.2 * s, 0.9 * s))
+            with k.limb(limb, along([root, tip])):
+                k.tube([root, root + Vector((sx * 0.8 * s, 0.05 * s, 0.75 * s)), tip], 0.05 * s, 0.02 * s, shade(body, 0.85), sides=5)
+                elbow = root + Vector((sx * 0.8 * s, 0.05 * s, 0.75 * s))
+                fingers = [tip, root + Vector((sx * 1.6 * s, -0.55 * s, 0.4 * s)), root + Vector((sx * 1.1 * s, -0.8 * s, 0.1 * s))]
+                for fgr in fingers[1:]:
+                    k.tube([elbow, fgr], 0.025 * s, 0.01 * s, shade(body, 0.85), sides=4)
+                pts = [root, elbow, tip, fingers[1], fingers[2], root + Vector((sx * 0.4 * s, -0.75 * s, -0.05 * s))]
+                for a, b_ in zip(pts[1:-1], pts[2:]):
+                    k.fin([elbow if a is not elbow else root, a, b_], 0.02 * s, extra)
+                k.fin([root, elbow, pts[-1]], 0.02 * s, extra)
+
+# -- birds -----------------------------------------------------------------------------------------------------
+
+BIRDS = {
+    'duckling': dict(L=0.85, W=0.55, H=0.5, leg=0.28, R=0.46, beak='bill', tail='stub', body='#ffd60a', belly='#ffe680', wing='#f2c200',
+                     beakc='#f77f00', legc='#f77f00', iris='#1b1b1b', fluffy=True),
+    'flamingo': dict(L=0.9, W=0.42, H=0.42, leg=2.0, R=0.3, beak='bent', tail='short', body='#ff8fab', belly='#ffb3c6', wing='#ff7096',
+                     wingtip='#1b1b1b', beakc='#f8e1e7', beaktip='#1b1b1b', legc='#ff7096', iris='#f4d35e', neck=1.6),
+    'kingfisher': dict(L=0.85, W=0.42, H=0.42, leg=0.25, R=0.42, beak='dagger', tail='short', body='#1e88e5', belly='#f77f00', wing='#1565c0',
+                       beakc='#1b1b1b', legc='#f77f00', iris='#1b1b1b', throat='#ffffff', flies=True, sheen='#4fc3f7'),
+    'owl': dict(L=0.75, W=0.6, H=0.75, leg=0.2, R=0.58, beak='hook', tail='short', body='#a47148', belly='#e9d8b8', wing='#8b5e3c',
+                beakc='#4a3a2a', legc='#d9c49a', iris='#f4a300', upright=True, disc='#f1e3c8', tufts=True, flies=True, speckle='#5a3e24'),
+    'penguin': dict(L=0.7, W=0.55, H=0.85, leg=0.12, R=0.45, beak='cone', tail='stub', body='#1b1b1b', belly='#f4f4f4', wing='#1b1b1b',
+                    beakc='#f77f00', legc='#f77f00', iris='#1b1b1b', upright=True, flippers=True, cheek='#ffd166'),
+    'eagle': dict(L=1.0, W=0.48, H=0.48, leg=0.35, R=0.42, beak='hook', tail='fan', body='#5c3d2e', belly='#4a2f22', wing='#4a2f22',
+                  beakc='#ffb703', legc='#ffb703', iris='#ffb703', head='#f1f1f1', tailc='#f1f1f1', flies=True, brow=True),
+    'parrot': dict(L=0.9, W=0.42, H=0.45, leg=0.3, R=0.42, beak='hook', tail='long', body='#e63946', belly='#e63946', wing='#1e88e5',
+                   wingband='#ffd166', beakc='#efe9e1', legc='#6c757d', iris='#f4d35e', face='#ffffff', flies=True),
+    'peacock': dict(L=0.95, W=0.45, H=0.48, leg=0.6, R=0.36, beak='cone', tail='peacock', body='#1e88e5', belly='#1565c0', wing='#8d6e4a',
+                    beakc='#9e9e9e', legc='#9e9e9e', iris='#1b1b1b', crest='#1e88e5', neck=0.6, face='#ffffff'),
+    'phoenix': dict(L=0.95, W=0.45, H=0.45, leg=0.32, R=0.4, beak='hook', tail='flame', body='#ff7b00', belly='#ffba08', wing='#d00000',
+                    wingtip='#ffba08', beakc='#ffd166', legc='#ffba08', iris='#ffba08', crest='#ffba08', flies=True),
+}
+
+def bird_pet(k, pid, q, s):
+    c = {key: hexc(v) for key, v in q.items() if isinstance(v, str) and v.startswith('#')}
+    body, belly, wingc = c['body'], c['belly'], c['wing']
+    L, W, H, leg, R = q['L'] * s, q['W'] * s, q['H'] * s, q['leg'] * s, q['R'] * s
+    up = q.get('upright')
+    z0 = leg + H * (1.0 if up else 0.75)
+    off = Vector((k.rnd.random() * 9, k.rnd.random() * 9, k.rnd.random() * 9))
+
+    def plumage(p, n):
+        if n.y > 0.35 and (p.z < z0 + H * 0.4 or up):
+            if q.get('speckle') and noise.noise(p * (14 / s) + off) > 0.3:
+                return c['speckle']
+            return belly
+        if q.get('sheen') and n.z > 0.5:
+            return c['sheen']
+        return body
+
+    if up:
+        k.vloft([(leg * 0.6, W * 0.6, W * 0.55, 0.0), (leg + H * 0.3, W, W * 0.92, 0.02 * s), (leg + H * 1.0, W * 0.95, W * 0.88, 0.03 * s),
+                 (leg + H * 1.6, W * 0.7, W * 0.66, 0.02 * s), (leg + H * 1.9, W * 0.35, W * 0.35, 0.0)], plumage, sides=16)
+    else:
+        k.loft([(-L * 0.55, W * 0.35, H * 0.35, z0 + H * 0.15), (-L * 0.25, W * 0.85, H * 0.85, z0), (0.1 * L, W, H, z0),
+                (L * 0.4, W * 0.8, H * 0.82, z0 + H * 0.2), (L * 0.55, W * 0.45, H * 0.5, z0 + H * 0.45)], plumage, sides=14)
+    if q.get('fluffy'):
+        k.blob([((0, 0, z0), (W * 1.08, L * 0.55, H * 1.05), body, 1, 0.2, 3.0)], 0.04 * s * 3, 0.3, lambda f: body if f.normal.z > -0.3 else belly)
+    # Neck and head (8).
+    neck = q.get('neck', 0.0) * s
+    nb = Vector((0, 0.1 * s if up else L * 0.45, (leg + H * 1.75) if up else z0 + H * 0.4))
+    if neck > 0:
+        hc = nb + Vector((0, 0.25 * s, neck))
+        npts = curve([nb, nb + Vector((0, 0.45 * s, neck * 0.35)), nb + Vector((0, -0.05 * s, neck * 0.7)), hc], 4)
+    else:
+        hc = nb + Vector((0, R * 0.35, R * (0.15 if up else 0.75)))
+        npts = [nb, hc]
+    beak = q['beak']
+    bd = Vector((0, 1, -1.1 if beak == 'bent' else -0.15)).normalized()
+    with k.limb(8, along(npts + [hc + bd * R * 1.5])):
+        if neck > 0:
+            k.tube(npts, R * 0.42, R * 0.38, body, sides=8)
+        headc = c.get('head', body)
+
+        def headpaint(f):
+            p, n = f.calc_center_median(), f.normal
+            if 'disc' in c and n.y > 0.3:
+                return c['disc']
+            if 'face' in c and n.y > 0.55 and abs(p.z - hc.z) < R * 0.4:
+                return c['face']
+            if 'throat' in c and n.z < -0.3 and n.y > 0:
+                return c['throat']
+            if 'cheek' in c and n.y > 0.2 and abs(n.x) > 0.6 and p.z < hc.z:
+                return c['cheek']
+            return headc
+
+        k.blob([(hc, (R, R * 0.98, R * 0.95), headc, 2, 0.02, 1.0)], 0.05 * s, 0.32, headpaint)
+        tipc = c['beakc']
+        base = hc + bd * R * 0.82
+        if beak == 'bill':  # a duck's flat bill
+            k.ico(base + bd * R * 0.35, (R * 0.42, R * 0.5, R * 0.14), tipc, subdiv=2, rough=0)
+        elif beak == 'hook':  # a hooked beak: upper mandible curving over
+            pts = curve([base, base + Vector((0, R * 0.4, R * 0.02)), base + Vector((0, R * 0.55, -R * 0.35))], 3)
+            k.tube(pts, R * 0.3, R * 0.03, tipc, sides=6)
+            k.ico(base + Vector((0, R * 0.12, -R * 0.15)), (R * 0.2, R * 0.25, R * 0.12), shade(tipc, 0.85), subdiv=1, rough=0)
+        elif beak == 'bent':  # a flamingo's beak, bent down, black-tipped
+            pts = curve([base, base + bd * R * 0.6, base + bd * R * 0.8 + Vector((0, 0, -R * 0.55))], 3)
+            k.tube(pts[:len(pts) // 2 + 1], R * 0.24, R * 0.16, tipc, sides=6)
+            k.tube(pts[len(pts) // 2:], R * 0.16, R * 0.03, c.get('beaktip', BLACK), sides=6)
+        elif beak == 'dagger':  # a kingfisher's long dagger beak
+            k.cyl(base, base + bd * R * 1.6, R * 0.2, R * 0.01, tipc, sides=6)
+        else:
+            k.cyl(base, base + bd * R * 0.7, R * 0.22, R * 0.01, tipc, sides=6)
+        for sx in (-1, 1):
+            n = Vector((sx * (0.42 if 'disc' in c else 0.75), 0.62 if 'disc' in c else 0.45, 0.25)).normalized()
+            pet_eye(k, hc + n * R * 0.88, n, R * (0.3 if 'disc' in c else 0.2), c['iris'],
+                    lid=shade(headc, 0.85) if q.get('brow') else None)
+            if q.get('tufts'):
+                k.fin([hc + Vector((sx * R * 0.35, 0, R * 0.7)), hc + Vector((sx * R * 0.75, -R * 0.1, R * 1.25)), hc + Vector((sx * R * 0.65, -R * 0.15, R * 0.65))], R * 0.08, body)
+        if 'crest' in c:
+            for j in range(5 if pid == 'peacock' else 4):
+                a = (j - 2) * 0.25
+                p = hc + Vector((a * R * 0.3, -R * 0.1, R * 0.9))
+                if pid == 'peacock':
+                    k.tube([p, p + Vector((a * R * 0.3, -R * 0.05, R * 0.55))], R * 0.025, R * 0.02, body, sides=3)
+                    k.ico(p + Vector((a * R * 0.3, -R * 0.05, R * 0.6)), R * 0.07, c['crest'], subdiv=1, rough=0)
+                else:
+                    k.cyl(p, p + Vector((0, -R * 0.55, R * (0.6 + 0.2 * (j % 2)))), R * 0.12, 0.0, c['crest'] if j % 2 else hexc('#d00000'), sides=4)
+    # Wings (5, 6): folded along the body, or spread for the fliers.
+    fly = q.get('flies')
+    for limb, sx in ((5, -1), (6, 1)):
+        root = Vector((sx * W * 0.82, (0.05 * s if up else L * 0.2), (leg + H * 1.45) if up else z0 + H * 0.45))
+        if q.get('flippers'):
+            tip = root + Vector((sx * 0.15 * s, 0.05 * s, -H * 1.0))
+            with k.limb(limb, along([root, tip])):
+                k.fin([root + Vector((0, 0.15 * s, 0)), root + Vector((0, -0.15 * s, 0)), tip], 0.07 * s, wingc)
+            continue
+        if fly:
+            tip = root + Vector((sx * 1.7 * s, -0.25 * s, 0.35 * s))
+        else:
+            tip = root + Vector((sx * 0.15 * s, -L * 0.95, -H * 0.15))
+        with k.limb(limb, along([root, tip])):
+            shape = [root + Vector((0, 0.18 * s, 0.05 * s)), tip]
+            if fly:
+                shape = [root + Vector((0, 0.2 * s, 0)), root + Vector((sx * 0.9 * s, 0.12 * s, 0.25 * s)), tip,
+                         tip + Vector((0, -0.35 * s, -0.1 * s)), root + Vector((sx * 0.9 * s, -0.55 * s, -0.05 * s)), root + Vector((0, -0.35 * s, -0.05 * s))]
+            else:
+                shape = [root + Vector((0, 0.2 * s, 0.05 * s)), root + Vector((sx * 0.12 * s, -L * 0.3, 0.1 * s)), tip, root + Vector((sx * 0.05 * s, -L * 0.45, -H * 0.4))]
+            k.fin(shape, 0.06 * s, wingc)
+            # Flight feathers along the trailing edge (and a band of colour on a parrot's wing).
+            n_f = 6 if fly else 4
+            for j in range(n_f):
+                t = (j + 0.5) / n_f
+                if fly:
+                    a = root.lerp(tip, 0.25 + 0.75 * t) + Vector((0, -0.2 * s, -0.04 * s))
+                    b_ = a + Vector((sx * 0.08 * s, -0.4 * s, -0.08 * s))
+                else:
+                    a = root.lerp(tip, 0.3 + 0.6 * t) + Vector((0, 0, -0.15 * s))
+                    b_ = a + Vector((0, -0.3 * s, -0.08 * s))
+                col = c.get('wingtip', shade(wingc, 0.8)) if t > 0.5 else c.get('wingband', shade(wingc, 0.9))
+                k.fin([a + Vector((0, 0.05 * s, 0)), a + Vector((0, -0.05 * s, 0)), b_], 0.02 * s, col)
+    # The tail (7).
+    tb = Vector((0, -0.25 * s, leg + H * 0.35)) if up else Vector((0, -L * 0.5, z0 + H * 0.2))
+    tk = q['tail']
+    with k.limb(7, along([tb, tb + Vector((0, -1.0 * s, 0))])):
+        if tk == 'stub':
+            k.fin([tb + Vector((-0.12 * s, 0, 0)), tb + Vector((0.12 * s, 0, 0)), tb + Vector((0, -0.25 * s, 0.05 * s))], 0.04 * s, shade(body, 0.85))
+        elif tk in ('short', 'fan', 'long'):
+            ln, spread = {'short': (0.4, 0.2), 'fan': (0.6, 0.45), 'long': (1.1, 0.15)}[tk]
+            tc = c.get('tailc', shade(wingc, 0.9))
+            for j in range(5):
+                a = (j - 2) / 2 * spread
+                d = Vector((a, -1, 0.1)).normalized()
+                k.fin([tb + Vector((-0.04 * s, 0, 0)), tb + Vector((0.04 * s, 0, 0)), tb + d * ln * s + Vector((a * 0.1 * s, 0, 0))], 0.02 * s,
+                      tc if tk != 'long' or j % 2 else c['wing'])
+        elif tk == 'peacock':  # the train, fanned up behind, with eye-spots
+            for j in range(13):
+                a = (j / 12 - 0.5) * 2.6
+                d = Vector((math.sin(a), -0.4, math.cos(a) * 0.9 + 0.2)).normalized()
+                tip = tb + d * 1.9 * s
+                sd = d.cross(Vector((0, 1, 0))).normalized() * 0.13 * s
+                k.fin([tb, tip + sd, tip + d * 0.12 * s, tip - sd], 0.02 * s, hexc('#2a9d8f') if j % 2 else hexc('#1f7a6f'))
+                k.ico(tip, 0.1 * s, hexc('#ffd166'), subdiv=1, rough=0)
+                k.ico(tip + Vector((0, 0.02 * s, 0)), 0.065 * s, hexc('#1e3a8a'), subdiv=1, rough=0)
+                k.ico(tip + Vector((0, 0.04 * s, 0)), 0.035 * s, hexc('#2a9d8f'), subdiv=1, rough=0)
+        elif tk == 'flame':  # long flame feathers, red to gold
+            for j in range(7):
+                a = (j - 3) * 0.22
+                pts = curve([tb, tb + Vector((a * 0.4 * s, -0.6 * s, 0.1 * s)), tb + Vector((a * 0.9 * s, -1.2 * s, 0.35 * s * (1 + abs(a))))], 3)
+                k.tube(pts, 0.07 * s, 0.01 * s, hexc('#d00000') if j % 2 else hexc('#ff7b00'), sides=4)
+                k.ico(Vector(pts[-1]), 0.07 * s, hexc('#ffba08'), subdiv=1, rough=0.2)
+    # Legs (3, 4) and feet.
+    for limb, sx in ((3, -1), (4, 1)):
+        hip = Vector((sx * W * 0.35, 0.0, (leg + H * 0.15) if up else z0 - H * 0.6))
+        foot = Vector((sx * W * 0.38, 0.06 * s, 0.03 * s))
+        knee = hip.lerp(foot, 0.5) + Vector((0, -0.08 * s if q['leg'] > 1 else 0.02 * s, 0))
+        with k.limb(limb, along([hip, knee, foot])):
+            k.tube_r([hip, knee, foot], [0.07 * s, 0.045 * s, 0.04 * s], c['legc'], sides=5)
+            if beak == 'bill' or q.get('flippers'):
+                k.fin([foot + Vector((-0.1 * s, -0.03 * s, 0)), foot + Vector((0.1 * s, -0.03 * s, 0)), foot + Vector((0.12 * s, 0.22 * s, 0)),
+                       foot + Vector((-0.12 * s, 0.22 * s, 0))], 0.025 * s, c['legc'])
+            else:
+                for t in (-0.45, 0, 0.45):
+                    k.cyl(foot, foot + Vector((t * 0.18 * s, 0.2 * s, -0.01 * s)), 0.025 * s, 0.01 * s, c['legc'], sides=3)
+                k.cyl(foot, foot + Vector((0, -0.12 * s, -0.01 * s)), 0.02 * s, 0.008 * s, c['legc'], sides=3)
+
+# -- the rest ---------------------------------------------------------------------------------------------------
 
 def pet(i):
     pid = PET_IDS[i]
-    plan, body_h, accent_h, extra_h, size, feature = PETS[pid]
     k = Kit(1000 + i)
-    rnd = k.rnd
-    body, accent = hexc(body_h), hexc(accent_h)
-    extra = hexc(extra_h) if extra_h else accent
-    s = 0.25 * size
-    vox = s * 0.14
-    if plan == 'quad':
-        ln = 1.5 if feature == 'long' else 1.25 if feature == 'bear' else 1.1
-        torso = Vector((0, 0, 1.08 * s))
-        head = torso + Vector((0, (ln + 0.3) * s, 0.65 * s))
-        hr = 0.62 * s * (1.15 if feature == 'mouse' else 1)
-        legs = 0.85 * s
-        k.blob([(torso, (0.78 * s, ln * s, 0.72 * s), body, 2, 0.04, 1.0),
-                (head, (hr, hr * 0.95, hr * 0.92), body, 2, 0.03, 1.0),
-                (torso + Vector((0, (ln - 0.2) * s, 0.35 * s)), (0.5 * s, 0.5 * s, 0.5 * s), body, 1, 0.03, 1.0)],
-               vox, 0.35, lambda f: accent if (f.normal.z < -0.5 and f.calc_center_median().y > -0.2 * s and feature not in ('mask',)) else body)
-        snout = head + Vector((0, hr * 0.85, -hr * 0.22))
-        k.ico(snout, (hr * 0.45, hr * 0.42, hr * 0.33), accent if feature != 'bear' else shade(body, 1.25), subdiv=1, rough=0.02)
-        k.ico(snout + Vector((0, hr * 0.4, hr * 0.12)), hr * 0.12, hexc('#2b2b2b'), subdiv=1, rough=0)
-        pet_eyes(k, head, hr, spread=0.5, up=0.28)
-        for sx in (-1, 1):
-            ear = head + Vector((sx * hr * 0.55, -hr * 0.05, hr * 0.7))
-            if feature in ('mouse', 'bear'):
-                k.ico(ear, (hr * 0.38, hr * 0.12, hr * 0.38), body, subdiv=1, rough=0)
-                k.ico(ear + Vector((0, hr * 0.06, 0)), (hr * 0.25, hr * 0.08, hr * 0.25), accent if feature == 'mouse' else shade(body, 0.8), subdiv=1, rough=0)
-            elif feature != 'wings':
-                k.cyl(ear, ear + Vector((sx * hr * 0.12, 0, hr * 0.55)), hr * 0.26, 0.0, extra if feature == 'mask' else body, sides=5)
-        for sx in (-1, 1):
-            for sy in (-1, 1):
-                top = torso + Vector((sx * 0.45 * s, sy * 0.6 * ln * s, -0.2 * s))
-                foot = Vector((top.x, top.y + 0.05 * s, 0.08 * s))
-                k.tube([top, foot], 0.24 * s, 0.2 * s, shade(body, 0.9) if feature != 'wings' else body, sides=6)
-                k.ico(foot + Vector((0, 0.07 * s, -0.02 * s)), (0.24 * s, 0.3 * s, 0.12 * s), accent if feature != 'bear' else shade(body, 0.7), subdiv=1, rough=0)
-        tail_root = torso + Vector((0, -ln * s * 0.95, 0.2 * s))
-        if feature == 'flat-tail':
-            k.ico(tail_root + Vector((0, -0.55 * s, -0.55 * s)), (0.4 * s, 0.6 * s, 0.1 * s), accent, subdiv=1, rough=0.05)
-            k.box(snout + Vector((0, hr * 0.3, -hr * 0.35)), (hr * 0.3, hr * 0.05, hr * 0.25), hexc('#fdfdfd'))
-        elif feature == 'bushy':
-            k.blob([(tail_root + Vector((0, -0.6 * s, 0.25 * s)), (0.38 * s, 0.75 * s, 0.38 * s), body, 1, 0.08, 1.0)], vox, 0.4,
-                   lambda f: hexc('#ffffff') if f.calc_center_median().y < tail_root.y - 1.0 * s else body)
-        elif feature == 'mask':
-            pts = curve([tail_root, tail_root + Vector((0, -0.5 * s, 0.3 * s)), tail_root + Vector((0, -0.95 * s, 0.6 * s))], 4)
-            _, faces = k.tube(pts, 0.2 * s, 0.12 * s, body, sides=7)
-            for fi, f in enumerate(faces):
-                if (fi // 7) % 2 == 1:
-                    k.paint([f], accent)
+    s = 0.25 * PET_SIZE.get(pid, 1.0)
+    if pid in QUADS:
+        quad_pet(k, pid, QUADS[pid], s)
+    elif pid in BIRDS:
+        bird_pet(k, pid, BIRDS[pid], s)
+    elif pid == 'lilyfrog':
+        green, belly, dark = hexc('#6ab04c'), hexc('#f6e58d'), hexc('#3d7a2a')
+        off = Vector((3.1, 1.7, 2.2))
+        z0 = 0.42 * s
+        k.loft([(-0.65 * s, 0.35 * s, 0.25 * s, z0), (-0.35 * s, 0.75 * s, 0.42 * s, z0 + 0.05 * s), (0.1 * s, 0.85 * s, 0.45 * s, z0 + 0.1 * s),
+                (0.5 * s, 0.7 * s, 0.32 * s, z0 + 0.12 * s), (0.75 * s, 0.35 * s, 0.15 * s, z0 + 0.08 * s)],
+               lambda p, n: belly if n.z < -0.2 or (n.y > 0.5 and p.z < z0) else (dark if noise.noise(p * (8 / s) + off) > 0.3 else green), sides=16)
+        with k.limb(8, lambda co: 0.0):
             for sx in (-1, 1):
-                k.ico(head + Vector((sx * hr * 0.42, hr * 0.62, hr * 0.28)), (hr * 0.32, hr * 0.2, hr * 0.2), accent, subdiv=1, rough=0)
-            pet_eyes(k, head, hr, spread=0.5, up=0.28)
-        elif feature == 'bear':
-            k.ico(tail_root, 0.15 * s, body, subdiv=1, rough=0.1)
-        elif feature == 'mouse':
-            k.tube(curve([tail_root, tail_root + Vector((0, -0.8 * s, 0)), tail_root + Vector((0.3 * s, -1.3 * s, 0.4 * s))], 4), 0.05 * s, 0.02 * s, accent, sides=4)
-        else:
-            k.tube(curve([tail_root, tail_root + Vector((0, -0.6 * s, 0.35 * s)), tail_root + Vector((0, -1.0 * s, 0.25 * s))], 4), 0.14 * s, 0.05 * s,
-                   extra if feature in ('horn', 'antlers') else body, sides=6)
-        if feature == 'horn':
-            pts = [head + Vector((0, hr * 0.35, hr * 0.75)) + Vector((0, 0.12 * s * t, 0.8 * s * t)) for t in [j / 6 for j in range(7)]]
-            k.tube(pts, 0.1 * s, 0.01 * s, extra, sides=5)
-            for j in range(5):
-                k.fin([torso + Vector((0, (ln * 0.7 - j * 0.25) * s, 0.65 * s)), torso + Vector((0, (ln * 0.55 - j * 0.25) * s, 1.05 * s)),
-                       torso + Vector((0, (ln * 0.35 - j * 0.25) * s, 0.6 * s))], 0.12 * s, accent)
-        if feature == 'antlers':
+                bump = Vector((sx * 0.38 * s, 0.42 * s, z0 + 0.38 * s))
+                k.ico(bump, 0.22 * s, green, subdiv=2, rough=0)
+                pet_eye(k, bump + Vector((sx * 0.06 * s, 0.1 * s, 0.1 * s)), Vector((sx * 0.4, 0.6, 0.6)), 0.16 * s, hexc('#d4a017'))
+            k.tube([(0.55 * s * math.cos(a), 0.58 * s + 0.12 * s * math.sin(a), z0 + 0.04 * s) for a in [math.pi * (0.15 + 0.7 * j / 8) for j in range(9)]],
+                   0.012 * s, 0.012 * s, hexc('#2d5a1e'), sides=3, cap=False)  # the wide mouth
+        for limb, sx in ((1, -1), (2, 1)):
+            top = Vector((sx * 0.45 * s, 0.35 * s, z0 - 0.1 * s))
+            foot = Vector((sx * 0.6 * s, 0.6 * s, 0.03 * s))
+            with k.limb(limb, along([top, foot])):
+                k.tube([top, foot], 0.08 * s, 0.06 * s, green, sides=6)
+                k.fin([foot, foot + Vector((sx * 0.15 * s, 0.12 * s, 0)), foot + Vector((0, 0.18 * s, 0)), foot + Vector((-sx * 0.1 * s, 0.12 * s, 0))], 0.02 * s, belly)
+        for limb, sx in ((3, -1), (4, 1)):  # big folded back legs
+            hip = Vector((sx * 0.6 * s, -0.35 * s, z0))
+            knee = Vector((sx * 0.85 * s, 0.05 * s, z0 + 0.1 * s))
+            foot = Vector((sx * 0.75 * s, -0.25 * s, 0.03 * s))
+            with k.limb(limb, along([hip, knee, foot])):
+                k.tube_r([hip, knee, foot], [0.2 * s, 0.13 * s, 0.07 * s], green, sides=8)
+                k.fin([foot, foot + Vector((sx * 0.25 * s, 0.2 * s, 0)), foot + Vector((0, 0.3 * s, 0)), foot + Vector((-sx * 0.15 * s, 0.2 * s, 0))], 0.02 * s, belly)
+    elif pid in ('sandcrab', 'hermit'):
+        shellc, clawc = (hexc('#e76f51'), hexc('#f4a261')) if pid == 'sandcrab' else (hexc('#e76f51'), hexc('#e76f51'))
+        z0 = 0.45 * s
+        k.blob([((0, 0, z0), (0.95 * s, 0.68 * s, 0.36 * s), shellc, 2, 0.05, 1.5)], 0.05 * s, 0.35,
+               lambda f: shade(shellc, 1.15) if f.normal.z > 0.6 else (shade(shellc, 0.8) if f.normal.z < -0.3 else shellc))
+        with k.limb(8, lambda co: 0.0):  # eyes on stalks
             for sx in (-1, 1):
-                base = head + Vector((sx * hr * 0.4, 0, hr * 0.75))
-                tip = base + Vector((sx * 0.35 * s, -0.1 * s, 0.75 * s))
-                k.tube([base, base + Vector((sx * 0.12 * s, 0, 0.4 * s)), tip], 0.06 * s, 0.03 * s, extra, sides=5)
-                k.tube([base + Vector((sx * 0.1 * s, 0, 0.35 * s)), base + Vector((sx * 0.45 * s, 0.1 * s, 0.5 * s))], 0.04 * s, 0.02 * s, extra, sides=4)
-            for j in range(4):
-                k.fin([torso + Vector((0, (ln * 0.7 - j * 0.3) * s, 0.65 * s)), torso + Vector((0, (ln * 0.55 - j * 0.3) * s, 1.0 * s)),
-                       torso + Vector((0, (ln * 0.4 - j * 0.3) * s, 0.6 * s))], 0.1 * s, accent)
-        if feature == 'wings':
+                stalk = Vector((sx * 0.22 * s, 0.55 * s, z0 + 0.15 * s))
+                k.tube([stalk, stalk + Vector((sx * 0.03 * s, 0.05 * s, 0.32 * s))], 0.045 * s, 0.04 * s, shellc, sides=5)
+                pet_eye(k, stalk + Vector((sx * 0.03 * s, 0.09 * s, 0.4 * s)), Vector((sx * 0.3, 1, 0.3)), 0.11 * s, hexc('#1b1b1b'))
+            k.box((0, 0.66 * s, z0 - 0.05 * s), (0.3 * s, 0.03 * s, 0.03 * s), shade(shellc, 0.55))
+        for limb, sx in ((5, -1), (6, 1)):  # claws
+            sh = Vector((sx * 0.7 * s, 0.35 * s, z0))
+            el = sh + Vector((sx * 0.3 * s, 0.35 * s, 0.05 * s))
+            cl = el + Vector((sx * 0.05 * s, 0.45 * s, 0.15 * s))
+            with k.limb(limb, along([sh, el, cl])):
+                k.tube([sh, el, cl], 0.11 * s, 0.1 * s, shellc, sides=6)
+                k.ico(cl, (0.27 * s, 0.38 * s, 0.22 * s), clawc, subdiv=2, rough=0.04)
+                k.cyl(cl + Vector((0, 0.25 * s, 0.07 * s)), cl + Vector((sx * 0.06 * s, 0.62 * s, 0.14 * s)), 0.1 * s, 0.01 * s, clawc, sides=5)
+                k.cyl(cl + Vector((0, 0.22 * s, -0.08 * s)), cl + Vector((sx * 0.03 * s, 0.5 * s, -0.04 * s)), 0.08 * s, 0.01 * s, shade(clawc, 0.85), sides=5)
+        for j in range(6):  # legs (9-14)
+            sx = -1 if j < 3 else 1
+            y = (0.2 - (j % 3) * 0.28) * s
+            hip = Vector((sx * 0.7 * s, y, z0 - 0.05 * s))
+            knee = Vector((sx * 1.15 * s, y, z0 + 0.15 * s))
+            foot = Vector((sx * 1.35 * s, y - 0.05 * s, 0.02 * s))
+            with k.limb(9 + j, along([hip, knee, foot])):
+                k.tube_r([hip, knee, foot], [0.06 * s, 0.05 * s, 0.02 * s], shellc, sides=5)
+        if pid == 'hermit':  # a spiral whelk shell on its back, banded
+            pts = [Vector((math.cos(a) * 0.32 * s * (1 - t), -0.3 * s + math.sin(a) * 0.32 * s * (1 - t), 0.7 * s + t * 1.0 * s))
+                   for t, a in [(j / 30, j / 30 * math.tau * 2.4) for j in range(31)]]
+            faces = k.tube_r(pts, [0.5 * s * (1 - t * 0.85) for t in [j / 30 for j in range(31)]], hexc('#e9c46a'), sides=12)
+            for f in faces:
+                if int(f.calc_center_median().z / (0.12 * s)) % 2:
+                    k.paint([f], hexc('#c97f3a'), 0.04)
+    elif pid == 'snail':
+        bodyc, shellc = hexc('#d4c4a8'), hexc('#c08552')
+        k.loft([(-0.85 * s, 0.1 * s, 0.06 * s, 0.07 * s), (-0.4 * s, 0.3 * s, 0.14 * s, 0.13 * s), (0.4 * s, 0.32 * s, 0.17 * s, 0.16 * s),
+                (0.85 * s, 0.25 * s, 0.25 * s, 0.32 * s), (1.05 * s, 0.18 * s, 0.2 * s, 0.42 * s)],
+               lambda p, n: shade(bodyc, 0.85) if n.z < -0.3 else bodyc, sides=12)
+        pts = [Vector((0.05 * s, -0.15 * s + math.cos(a) * 0.4 * s * (1 - t * 0.9), 0.75 * s + math.sin(a) * 0.4 * s * (1 - t * 0.9)))
+               for t, a in [(j / 36, j / 36 * math.tau * 2.6) for j in range(37)]]
+        faces = k.tube_r([p + Vector((t * 0.25 * s, 0, 0)) for p, t in zip(pts, [j / 36 for j in range(37)])],
+                         [0.32 * s * (1 - t * 0.8) for t in [j / 36 for j in range(37)]], shellc, sides=12)
+        for fi, f in enumerate(faces):
+            if (fi // 12) % 3 == 0:
+                k.paint([f], hexc('#8a5a33'), 0.03)
+        with k.limb(8, lambda co: max(0.0, (co.y - 0.7 * s) / (0.6 * s))):
             for sx in (-1, 1):
-                root = torso + Vector((sx * 0.5 * s, 0.2 * s, 0.55 * s))
-                k.fin([root, root + Vector((sx * 0.9 * s, 0.3 * s, 0.9 * s)), root + Vector((sx * 1.8 * s, -0.1 * s, 0.85 * s)),
-                       root + Vector((sx * 1.5 * s, -0.5 * s, 0.35 * s)), root + Vector((sx * 0.9 * s, -0.6 * s, 0.25 * s)),
-                       root + Vector((sx * 0.3 * s, -0.7 * s, 0.0))], 0.05 * s, extra)
-                k.cyl(head + Vector((sx * hr * 0.35, -hr * 0.2, hr * 0.7)), head + Vector((sx * hr * 0.45, -hr * 0.6, hr * 1.35)), 0.08 * s, 0.0, accent, sides=5)
-            for j in range(6):
-                y = (ln * 0.8 - j * 0.38) * s
-                k.cyl(torso + Vector((0, y, 0.62 * s)), torso + Vector((0, y - 0.05 * s, 0.98 * s)), 0.1 * s, 0.0, accent, sides=4)
-    elif plan == 'bird':
-        upright, tall = feature == 'upright', feature == 'tall'
-        leg_h = 2.2 * s if tall else 0.42 * s
-        torso = Vector((0, 0, leg_h + 0.7 * s))
-        tr = (0.62 * s, 0.6 * s, 1.05 * s) if upright else (0.62 * s, 0.9 * s, 0.62 * s)
-        if upright:
-            head = torso + Vector((0, 0.1 * s, 1.15 * s))
-        elif tall:
-            head = torso + Vector((0, 0.65 * s, 1.75 * s))
-        else:
-            head = torso + Vector((0, 0.7 * s, 0.75 * s))
-        hr = (0.62 if feature == 'round' else 0.45) * s
-        parts = [(torso, tr, body, 2, 0.03, 1.0), (head, (hr, hr, hr), body, 2, 0.03, 1.0)]
-        if not tall:
-            parts.append((torso + (head - torso) * 0.55, (hr * 0.85, hr * 0.85, hr * 0.85), body, 1, 0.03, 1.0))
-        belly_col = accent if pid not in ('parrot', 'phoenix') else extra
-        k.blob(parts, vox, 0.35, lambda f: belly_col if (f.normal.y > 0.35 and f.calc_center_median().z < head.z - hr * 0.6) else body)
-        if tall:
-            k.tube(curve([torso + Vector((0, 0.4 * s, 0.35 * s)), torso + Vector((0, 0.75 * s, 0.9 * s)), torso + Vector((0, 0.4 * s, 1.4 * s)), head], 4), 0.13 * s, 0.12 * s, body, sides=6)
-        beak = hexc(extra_h) if (extra_h and pid not in ('parrot', 'phoenix')) else (accent if tall else hexc('#f77f00'))
-        bd = Vector((0, 1, -0.6 if tall else -0.15)).normalized()
-        k.cyl(head + bd * hr * 0.75, head + bd * hr * (1.55 if feature != 'round' else 1.15), hr * 0.25, 0.0, beak, sides=5)
-        pet_eyes(k, head, hr, spread=0.62 if feature == 'round' else 0.55, up=0.25, size=0.3 if feature == 'round' else 0.24)
-        if feature == 'round':
+                base = Vector((sx * 0.08 * s, 0.95 * s, 0.5 * s))
+                tip = base + Vector((sx * 0.08 * s, 0.15 * s, 0.4 * s))
+                k.tube([base, tip], 0.035 * s, 0.025 * s, bodyc, sides=5)
+                pet_eye(k, tip + Vector((0, 0.02 * s, 0.05 * s)), Vector((sx * 0.4, 1, 0.3)), 0.07 * s, hexc('#1b1b1b'))
+            k.box((0, 1.12 * s, 0.36 * s), (0.12 * s, 0.02 * s, 0.015 * s), shade(bodyc, 0.6))
+    elif pid == 'turtle':
+        skin, shellc, dark = hexc('#90a955'), hexc('#4f772d'), hexc('#31572c')
+        k.blob([((0, 0, 0.42 * s), (0.95 * s, 1.08 * s, 0.55 * s), shellc, 2, 0.02, 1.0)], 0.06 * s, 0.22,
+               lambda f: (dark if (int((f.calc_center_median().x / s + 5) / 0.45) + int((f.calc_center_median().y / s + 5) / 0.45)) % 2 else shellc)
+               if f.normal.z > -0.2 else hexc('#d4c486'))
+        k.vloft([(0.2 * s, 0.98 * s, 1.1 * s, 0.0), (0.3 * s, 1.0 * s, 1.12 * s, 0.0)], hexc('#d4c486'), sides=20, bottom=False, top=False)
+        head = Vector((0, 1.2 * s, 0.45 * s))
+        with k.limb(8, along([Vector((0, 0.8 * s, 0.35 * s)), head])):
+            k.tube([Vector((0, 0.8 * s, 0.35 * s)), head], 0.2 * s, 0.22 * s, skin, sides=8)
+            k.ico(head, (0.28 * s, 0.36 * s, 0.26 * s), skin, subdiv=2, rough=0.02)
             for sx in (-1, 1):
-                k.cyl(head + Vector((sx * hr * 0.5, 0, hr * 0.7)), head + Vector((sx * hr * 0.7, -hr * 0.1, hr * 1.25)), hr * 0.22, 0.0, body, sides=4)
-        wing = shade(body, 0.82) if pid != 'parrot' else accent
-        for sx in (-1, 1):
-            root = torso + Vector((sx * tr[0] * 0.85, 0.15 * s, 0.15 * s))
-            k.fin([root, root + Vector((sx * 0.25 * s, -0.25 * s, 0.25 * s)), root + Vector((sx * 0.3 * s, -1.15 * s, -0.05 * s)),
-                   root + Vector((sx * 0.1 * s, -0.5 * s, -0.4 * s))], 0.07 * s, wing)
-            foot = Vector((sx * 0.22 * s, 0.05 * s, 0.03 * s))
-            k.tube([torso + Vector((sx * 0.22 * s, 0, -tr[2] * 0.8)), foot], 0.05 * s, 0.04 * s, beak, sides=4)
-            for t in (-0.5, 0, 0.5):
-                k.cyl(foot, foot + Vector((t * 0.15 * s, 0.22 * s, -0.01 * s)), 0.03 * s, 0.015 * s, beak, sides=3)
-        if feature == 'fan':
-            base = torso + Vector((0, -0.75 * s, 0.25 * s))
-            for f_ in range(9):
-                a = (f_ / 8 - 0.5) * 2.4
-                d = Vector((math.sin(a), -0.35, math.cos(a) * 0.95 + 0.25)).normalized()
-                tip = base + d * 2.1 * s
-                side = d.cross(Vector((0, 1, 0))).normalized() * 0.2 * s
-                k.fin([base, tip + side, tip + d * 0.15 * s, tip - side], 0.03 * s, accent if f_ % 2 == 0 else extra)
-                k.ico(tip, 0.1 * s, extra if f_ % 2 == 0 else hexc('#1e3a8a'), subdiv=1, rough=0)
-        else:
-            base = torso + Vector((0, -tr[1] * 0.85, 0.1 * s))
-            k.fin([base + Vector((0.2 * s, 0, 0)), base + Vector((0.32 * s, -0.55 * s, 0.25 * s)), base + Vector((-0.32 * s, -0.55 * s, 0.25 * s)),
-                   base + Vector((-0.2 * s, 0, 0))], 0.06 * s, shade(body, 0.85))
-    elif plan == 'frog':
-        torso = Vector((0, 0, 0.5 * s))
-        k.blob([(torso, (0.85 * s, 0.85 * s, 0.5 * s), body, 2, 0.03, 1.0),
-                (torso + Vector((0, 0.4 * s, 0.15 * s)), (0.75 * s, 0.55 * s, 0.45 * s), body, 1, 0.03, 1.0)], vox, 0.35,
-               lambda f: accent if f.normal.z < -0.2 or (f.normal.y > 0.6 and f.calc_center_median().z < 0.45 * s) else body)
-        for sx in (-1, 1):
-            bump = torso + Vector((sx * 0.38 * s, 0.5 * s, 0.5 * s))
-            k.ico(bump, 0.26 * s, body, subdiv=1, rough=0)
-            k.ico(bump + Vector((0, 0.12 * s, 0.08 * s)), 0.17 * s, hexc('#151515'), subdiv=1, rough=0)
-            k.ico(bump + Vector((sx * 0.03 * s, 0.22 * s, 0.14 * s)), 0.05 * s, hexc('#ffffff'), subdiv=1, rough=0)
-            k.ico(Vector((sx * 0.75 * s, -0.25 * s, 0.25 * s)), (0.28 * s, 0.55 * s, 0.22 * s), body, subdiv=1, rough=0.02)
-            k.ico(Vector((sx * 0.85 * s, 0.25 * s, 0.07 * s)), (0.22 * s, 0.32 * s, 0.07 * s), accent, subdiv=1, rough=0)
-            k.ico(Vector((sx * 0.5 * s, 0.75 * s, 0.07 * s)), (0.15 * s, 0.2 * s, 0.07 * s), accent, subdiv=1, rough=0)
-        k.box(torso + Vector((0, 0.95 * s, 0.05 * s)), (0.6 * s, 0.03 * s, 0.03 * s), shade(body, 0.5))
-    elif plan in ('crab', 'hermit'):
-        torso = Vector((0, 0, 0.45 * s))
-        k.blob([(torso, (0.9 * s, 0.65 * s, 0.38 * s), body, 2, 0.05, 1.5)], vox, 0.4,
-               lambda f: shade(body, 1.15) if f.normal.z > 0.6 else body)
-        for sx in (-1, 1):
-            arm = torso + Vector((sx * 0.75 * s, 0.4 * s, 0.05 * s))
-            claw = arm + Vector((sx * 0.35 * s, 0.45 * s, 0.15 * s))
-            k.tube([torso + Vector((sx * 0.6 * s, 0.25 * s, 0)), arm, claw], 0.1 * s, 0.09 * s, body, sides=5)
-            k.ico(claw, (0.28 * s, 0.35 * s, 0.22 * s), accent, subdiv=1, rough=0.05)
-            k.cyl(claw + Vector((0, 0.25 * s, 0.05 * s)), claw + Vector((sx * 0.05 * s, 0.6 * s, 0.12 * s)), 0.1 * s, 0.01 * s, accent, sides=4)
-            for l in range(3):
-                y = (0.15 - l * 0.3) * s
-                knee = torso + Vector((sx * 1.1 * s, y, 0.15 * s))
-                k.tube([torso + Vector((sx * 0.7 * s, y, 0)), knee, Vector((sx * 1.3 * s, y - 0.05 * s, 0.02 * s))], 0.05 * s, 0.03 * s, body, sides=4)
-            stalk = torso + Vector((sx * 0.22 * s, 0.45 * s, 0.25 * s))
-            k.tube([stalk, stalk + Vector((0, 0.05 * s, 0.3 * s))], 0.04 * s, 0.04 * s, body, sides=4)
-            k.ico(stalk + Vector((0, 0.08 * s, 0.38 * s)), 0.1 * s, hexc('#151515'), subdiv=1, rough=0)
-        if plan == 'hermit':
-            # A spiral shell on its back.
-            for j in range(10):
-                t = j / 9
-                a = t * math.tau * 1.6
-                c = Vector((math.cos(a) * 0.35 * s * (1 - t), -0.25 * s + math.sin(a) * 0.35 * s * (1 - t), 0.75 * s + t * 0.9 * s))
-                k.ico(c, 0.55 * s * (1 - t * 0.75), accent if j % 2 == 0 else shade(accent, 0.85), subdiv=1, rough=0.03)
-    elif plan == 'snail':
-        k.blob([((0, 0.15 * s, 0.18 * s), (0.36 * s, 1.05 * s, 0.2 * s), body, 2, 0.03, 1.0),
-                ((0, 0.95 * s, 0.35 * s), (0.25 * s, 0.25 * s, 0.25 * s), body, 1, 0.03, 1.0)], vox, 0.35, lambda f: body)
-        for j in range(14):
-            t = j / 13
-            a = t * math.tau * 2.2
-            c = Vector((0.05 * s, -0.2 * s + math.cos(a) * 0.38 * s * (1 - t * 0.85), 0.8 * s + math.sin(a) * 0.38 * s * (1 - t * 0.85)))
-            k.ico(c + Vector((t * 0.12 * s, 0, 0)), 0.5 * s * (1 - t * 0.8), accent if j % 2 == 0 else shade(accent, 0.82), subdiv=1, rough=0.02)
-        for sx in (-1, 1):
-            base = Vector((sx * 0.1 * s, 1.0 * s, 0.5 * s))
-            k.tube([base, base + Vector((sx * 0.05 * s, 0.1 * s, 0.4 * s))], 0.035 * s, 0.03 * s, body, sides=4)
-            k.ico(base + Vector((sx * 0.05 * s, 0.12 * s, 0.45 * s)), 0.08 * s, hexc('#151515'), subdiv=1, rough=0)
-    elif plan == 'turtle':
-        shell = Vector((0, 0, 0.5 * s))
-        k.blob([(shell, (0.95 * s, 1.05 * s, 0.55 * s), accent, 2, 0.04, 1.0)], vox * 1.2, 0.18,
-               lambda f: shade(accent, 0.75) if int((f.calc_center_median().x + 5) / (0.4 * s)) % 2 == int((f.calc_center_median().y + 5) / (0.4 * s)) % 2 else accent)
-        k.ico((0, 0, 0.18 * s), (0.95 * s, 1.05 * s, 0.12 * s), shade(accent, 1.25), subdiv=1, rough=0)
-        head = Vector((0, 1.15 * s, 0.4 * s))
-        k.ico(head, (0.3 * s, 0.38 * s, 0.3 * s), body, subdiv=2, rough=0.02)
-        pet_eyes(k, head, 0.3 * s, spread=0.7, up=0.3)
-        for sx in (-1, 1):
-            for sy in (-1, 1):
-                k.ico(Vector((sx * 0.75 * s, sy * 0.6 * s, 0.15 * s)), (0.28 * s, 0.32 * s, 0.13 * s), body, subdiv=1, rough=0.02)
-        k.cyl((0, -1.0 * s, 0.25 * s), (0, -1.35 * s, 0.2 * s), 0.1 * s, 0.0, body, sides=5)
-    elif plan == 'octopus':
+                n = Vector((sx * 0.75, 0.55, 0.3)).normalized()
+                pet_eye(k, head + n * 0.27 * s, n, 0.09 * s, hexc('#4a3a1a'))
+            k.box(head + Vector((0, 0.3 * s, -0.08 * s)), (0.25 * s, 0.02 * s, 0.015 * s), shade(skin, 0.6))
+        for limb, sx, y in ((1, -1, 0.65), (2, 1, 0.65), (3, -1, -0.65), (4, 1, -0.65)):
+            top = Vector((sx * 0.7 * s, y * s, 0.32 * s))
+            foot = Vector((sx * 0.85 * s, y * 1.05 * s, 0.05 * s))
+            with k.limb(limb, along([top, foot])):
+                k.tube([top, foot], 0.16 * s, 0.14 * s, skin, sides=7)
+                k.ico(foot, (0.17 * s, 0.2 * s, 0.07 * s), skin, subdiv=1, rough=0)
+        with k.limb(7, along([Vector((0, -1.0 * s, 0.3 * s)), Vector((0, -1.35 * s, 0.22 * s))])):
+            k.cyl((0, -1.0 * s, 0.3 * s), (0, -1.35 * s, 0.22 * s), 0.1 * s, 0.0, skin, sides=6)
+    elif pid == 'seal':
+        grey, light = hexc('#9aa5b1'), hexc('#cfd6dd')
+        z0 = 0.45 * s
+        off = Vector((2.2, 7.1, 1.3))
+        k.loft([(-1.1 * s, 0.15 * s, 0.12 * s, 0.2 * s), (-0.7 * s, 0.38 * s, 0.32 * s, z0 - 0.08 * s), (0.0, 0.58 * s, 0.48 * s, z0),
+                (0.5 * s, 0.5 * s, 0.48 * s, z0 + 0.12 * s), (0.85 * s, 0.32 * s, 0.33 * s, z0 + 0.3 * s)],
+               lambda p, n: light if n.z < -0.3 else (shade(grey, 0.75) if noise.noise(p * (7 / s) + off) > 0.35 else grey), sides=14)
+        hc = Vector((0, 1.0 * s, z0 + 0.45 * s))
+        with k.limb(8, along([Vector((0, 0.75 * s, z0 + 0.25 * s)), hc])):
+            k.blob([(hc, (0.36 * s, 0.38 * s, 0.34 * s), grey, 2, 0.02, 1.0), (hc + Vector((0, 0.3 * s, -0.08 * s)), (0.2 * s, 0.18 * s, 0.15 * s), grey, 1, 0.02, 1.0)],
+                   0.05 * s, 0.32, lambda f: light if f.calc_center_median().y > hc.y + 0.2 * s else grey)
+            k.ico(hc + Vector((0, 0.47 * s, -0.04 * s)), (0.07 * s, 0.04 * s, 0.05 * s), BLACK, subdiv=1, rough=0)
+            for sx in (-1, 1):
+                n = Vector((sx * 0.55, 0.75, 0.3)).normalized()
+                pet_eye(k, hc + n * 0.34 * s, n, 0.11 * s, hexc('#1b1b1b'))
+                for j in range(3):
+                    a = hc + Vector((sx * 0.12 * s, 0.42 * s, -0.08 * s - j * 0.025 * s))
+                    k.tube([a, a + Vector((sx * 0.3 * s, 0.05 * s, 0.03 * s - j * 0.04 * s))], 0.008 * s, 0.004 * s, hexc('#ececec'), sides=3)
+        for limb, sx in ((5, -1), (6, 1)):  # front flippers
+            root = Vector((sx * 0.45 * s, 0.4 * s, z0 - 0.3 * s))
+            tip = root + Vector((sx * 0.4 * s, 0.05 * s, -0.25 * s))
+            with k.limb(limb, along([root, tip])):
+                k.fin([root + Vector((0, 0.12 * s, 0)), tip + Vector((0, 0.08 * s, 0)), tip + Vector((0, -0.08 * s, 0)), root + Vector((0, -0.12 * s, 0))], 0.05 * s, shade(grey, 0.8))
+        with k.limb(7, along([Vector((0, -1.0 * s, 0.2 * s)), Vector((0, -1.5 * s, 0.15 * s))])):  # rear flippers
+            for sx in (-1, 1):
+                k.fin([Vector((0, -1.0 * s, 0.2 * s)), Vector((sx * 0.4 * s, -1.45 * s, 0.12 * s)), Vector((sx * 0.1 * s, -1.5 * s, 0.15 * s))], 0.05 * s, shade(grey, 0.8))
+    elif pid in ('octopus', 'kraken'):
+        body, accent = (hexc('#e56b6f'), hexc('#b5838d')) if pid == 'octopus' else (hexc('#6a0dad'), hexc('#c77dff'))
         head = Vector((0, 0, 1.5 * s))
-        k.blob([(head, (0.72 * s, 0.72 * s, 0.85 * s), body, 2, 0.03, 1.0), (head + Vector((0, -0.15 * s, 0.4 * s)), (0.55 * s, 0.55 * s, 0.6 * s), body, 1, 0.03, 1.0)],
-               vox, 0.35, lambda f: shade(body, 0.8) if noise.noise(f.calc_center_median() * (3 / s)) > 0.35 else body)
-        pet_eyes(k, head + Vector((0, 0, -0.15 * s)), 0.72 * s, spread=0.45, up=0.0, size=0.26)
+        off = Vector((4.4, 1.1, 3.3))
+        with k.limb(8, lambda co: 0.0):
+            k.blob([(head, (0.72 * s, 0.7 * s, 0.85 * s), body, 2, 0.02, 1.0), (head + Vector((0, -0.2 * s, 0.45 * s)), (0.58 * s, 0.6 * s, 0.62 * s), body, 2, 0.02, 1.0)],
+                   0.06 * s, 0.35, lambda f: accent if noise.noise(f.calc_center_median() * (5 / s) + off) > 0.3 else body)
+            for sx in (-1, 1):
+                n = Vector((sx * 0.45, 0.85, -0.05)).normalized()
+                pet_eye(k, head + Vector((0, 0, -0.2 * s)) + n * 0.68 * s, n, 0.2 * s, hexc('#f4d35e') if pid == 'kraken' else hexc('#2b2b2b'), lid=shade(body, 0.85))
+            if pid == 'kraken':
+                for j in range(5):
+                    a = (j - 2) * 0.35
+                    p = head + Vector((math.sin(a) * 0.4 * s, -0.1 * s, 0.95 * s))
+                    k.cyl(p, p + Vector((math.sin(a) * 0.1 * s, -0.05 * s, 0.32 * s)), 0.07 * s, 0.0, hexc('#ffd166'), sides=4)
         for t in range(8):
-            a = t / 8 * math.tau
+            a = t / 8 * math.tau + 0.2
             d = Vector((math.cos(a), math.sin(a), 0))
             side = d.cross(Vector((0, 0, 1)))
-            pts = curve([head + d * 0.4 * s + Vector((0, 0, -0.55 * s)), head + d * 0.75 * s + Vector((0, 0, -1.05 * s)),
-                         head + d * 1.1 * s + Vector((0, 0, -1.3 * s)), head + d * 1.35 * s + side * 0.2 * s + Vector((0, 0, -1.0 * s))], 4)
-            tentacle(k, pts, 0.16 * s, 0.03 * s, body if t % 2 == 0 else accent, accent, sides=6)
-    elif plan in ('fish', 'seal'):
-        seal = plan == 'seal'
-        z0 = (0.55 if seal else 1.2) * s
+            pts = curve([head + d * 0.35 * s + Vector((0, 0, -0.55 * s)), head + d * 0.75 * s + Vector((0, 0, -1.05 * s)),
+                         head + d * 1.1 * s + Vector((0, 0, -1.3 * s)), head + d * 1.45 * s + side * 0.25 * s + Vector((0, 0, -1.05 * s))], 4)
+            with k.limb(9 + t, along(pts)):
+                tentacle(k, pts, 0.17 * s, 0.025 * s, body if t % 2 == 0 else shade(body, 0.9), accent, sides=7)
+    elif pid in ('spiritkoi', 'starwhale'):
+        koi = pid == 'spiritkoi'
+        body, accent = (hexc('#fdfcdc'), hexc('#f77f00')) if koi else (hexc('#3a0ca3'), hexc('#bde0fe'))
+        z0 = 1.2 * s
         L = 1.4 * s
-        sections = [(-L, 0.12 * s, 0.14 * s, z0), (-L * 0.6, 0.32 * s, 0.38 * s, z0), (-L * 0.1, 0.55 * s, 0.58 * s, z0),
-                    (L * 0.4, 0.55 * s, 0.6 * s, z0 + 0.05 * s), (L * 0.85, 0.4 * s, 0.45 * s, z0 + 0.08 * s), (L * 1.1, 0.12 * s, 0.15 * s, z0 + 0.05 * s)]
+        off = Vector((1.2, 5.5, 3.3))
 
-        def skin(c, n):
+        def skin(p, n):
             if n.z < -0.35:
+                return accent if not koi else WHITE
+            if koi and noise.noise(p * (4 / s) + off) > 0.12:
                 return accent
-            if feature == 'spots' and n.z > 0.3 and noise.noise(c * (6 / s)) > 0.3:
+            if not koi and n.z > 0.2 and noise.noise(p * (7 / s) + off) > 0.35:
                 return hexc('#fdfdfd')
-            if pid == 'spiritkoi' and noise.noise(c * (4 / s) + Vector((3, 3, 3))) > 0.15:
-                return accent
             return body
 
-        k.loft(sections, skin, sides=10)
-        pet_eyes(k, Vector((0, L * 0.6, z0 + 0.12 * s)), 0.48 * s, spread=0.85, up=0.2, size=0.22)
-        tail = Vector((0, -L, z0))
-        if seal:
-            for sx in (-1, 1):
-                k.fin([tail, tail + Vector((sx * 0.55 * s, -0.45 * s, -0.15 * s)), tail + Vector((sx * 0.15 * s, -0.55 * s, -0.1 * s))], 0.06 * s, accent)
-                k.fin([Vector((sx * 0.45 * s, L * 0.35, z0 - 0.35 * s)), Vector((sx * 0.85 * s, L * 0.1, z0 - 0.55 * s)), Vector((sx * 0.45 * s, 0, z0 - 0.4 * s))], 0.06 * s, accent)
-            for sx in (-1, 1):
-                for j in range(3):
-                    k.tube([Vector((sx * 0.25 * s, L * 1.05, z0 - 0.05 * s + j * 0.04 * s)), Vector((sx * 0.6 * s, L * 1.0, z0 - 0.1 * s + j * 0.08 * s))], 0.01 * s, 0.006 * s, hexc('#2b2b2b'), sides=3)
-        else:
-            k.fin([tail + Vector((0, 0.1 * s, 0)), tail + Vector((0, -0.6 * s, 0.75 * s)), tail + Vector((0, -0.35 * s, 0)), tail + Vector((0, -0.6 * s, -0.75 * s))], 0.05 * s, accent)
-            k.fin([Vector((0, L * 0.3, z0 + 0.5 * s)), Vector((0, -L * 0.1, z0 + 1.0 * s)), Vector((0, -L * 0.4, z0 + 0.35 * s))], 0.05 * s, accent)
-            for sx in (-1, 1):
-                k.fin([Vector((sx * 0.45 * s, L * 0.4, z0 - 0.2 * s)), Vector((sx * 0.95 * s, L * 0.1, z0 - 0.4 * s)), Vector((sx * 0.45 * s, L * 0.15, z0 - 0.35 * s))], 0.04 * s, accent)
-            if pid == 'spiritkoi':
+        tail_t = axis_t(L * 1.1, -L * 1.6)
+        with k.limb(7, tail_t):
+            k.loft([(-L, 0.14 * s, 0.16 * s, z0), (-L * 0.6, 0.34 * s, 0.4 * s, z0), (-L * 0.1, 0.56 * s, 0.6 * s, z0), (L * 0.4, 0.56 * s, 0.6 * s, z0 + 0.05 * s),
+                    (L * 0.85, 0.4 * s, 0.45 * s, z0 + 0.08 * s), (L * 1.1, 0.14 * s, 0.16 * s, z0 + 0.05 * s)], skin, sides=14)
+            tail = Vector((0, -L, z0))
+            if koi:  # long flowing fins, a butterfly koi
+                k.fin([tail + Vector((0, 0.1 * s, 0)), tail + Vector((0, -0.6 * s, 0.85 * s)), tail + Vector((0, -1.05 * s, 0.4 * s)), tail + Vector((0, -0.7 * s, 0)),
+                       tail + Vector((0, -1.05 * s, -0.4 * s)), tail + Vector((0, -0.6 * s, -0.85 * s))], 0.03 * s, hexc('#ffd9a8'))
+                k.fin([Vector((0, L * 0.4, z0 + 0.52 * s)), Vector((0, -L * 0.1, z0 + 0.95 * s)), Vector((0, -L * 0.55, z0 + 0.4 * s))], 0.03 * s, hexc('#ffd9a8'))
                 for sx in (-1, 1):
-                    k.tube([Vector((sx * 0.15 * s, L * 1.08, z0)), Vector((sx * 0.5 * s, L * 1.25, z0 - 0.3 * s))], 0.025 * s, 0.01 * s, accent, sides=3)
-    elif plan == 'serpent':
-        pts = [Vector((math.sin(t * 5) * 0.5 * s, s * (1.6 - t * 3.2), s * (1.1 + math.sin(t * 3 + 1) * 0.3))) for t in [j / 10 for j in range(11)]]
+                    k.tube([Vector((sx * 0.15 * s, L * 1.08, z0)), Vector((sx * 0.45 * s, L * 1.25, z0 - 0.3 * s))], 0.025 * s, 0.01 * s, accent, sides=3)
+            else:  # whale flukes and a glowing dorsal hump
+                for sx in (-1, 1):
+                    k.fin([tail, tail + Vector((sx * 0.75 * s, -0.4 * s, 0.05 * s)), tail + Vector((sx * 0.6 * s, -0.15 * s, 0.03 * s))], 0.05 * s, accent)
+        for limb, sx in ((5, -1), (6, 1)):
+            root = Vector((sx * 0.5 * s, L * 0.4, z0 - 0.2 * s))
+            tip = root + Vector((sx * (0.75 if koi else 0.6) * s, -0.3 * s, -0.35 * s))
+            with k.limb(limb, along([root, tip])):
+                k.fin([root + Vector((0, 0.1 * s, 0)), tip, root + Vector((0, -0.2 * s, -0.05 * s))], 0.03 * s, hexc('#ffd9a8') if koi else accent)
+        with k.limb(8, lambda co: 0.0):
+            for sx in (-1, 1):
+                n = Vector((sx * 0.85, 0.45, 0.2)).normalized()
+                pet_eye(k, Vector((sx * 0.4 * s, L * 0.75, z0 + 0.12 * s)), n, 0.12 * s, hexc('#1b1b1b') if koi else hexc('#bde0fe'))
+            k.box((0, L * 1.1, z0 - 0.08 * s), (0.2 * s, 0.02 * s, 0.02 * s), shade(body, 0.6))
+        if not koi:
+            for j in range(14):
+                a = j / 14 * math.tau
+                k.ico((math.cos(a) * 0.55 * s, L * 0.1 + math.sin(a) * 0.4 * s, z0 + 0.55 * s), 0.04 * s, hexc('#fff3b0'), subdiv=1, rough=0)
+    elif pid == 'wyrmling':
+        body, belly = hexc('#3a86a8'), hexc('#90e0ef')
+        pts = [Vector((math.sin(t * 6) * 0.45 * s, s * (1.5 - t * 3.6), s * (1.0 + math.sin(t * 4 + 1) * 0.3))) for t in [j / 14 for j in range(15)]]
         pts.reverse()
-        _, faces = k.tube(curve(pts, 3), 0.12 * s, 0.4 * s, body, sides=8)
-        for fi, f in enumerate(faces):
-            if f.normal.z < -0.3:
-                k.paint([f], accent)
-        head = Vector((0, 1.9 * s, 1.35 * s))
-        k.blob([(head, (0.38 * s, 0.55 * s, 0.33 * s), body, 2, 0.03, 1.0)], vox, 0.4, lambda f: accent if f.normal.z < -0.4 else body)
-        pet_eyes(k, head + Vector((0, 0.1 * s, 0)), 0.36 * s, spread=0.7, up=0.35)
-        for sx in (-1, 1):
-            k.cyl(head + Vector((sx * 0.15 * s, -0.15 * s, 0.25 * s)), head + Vector((sx * 0.25 * s, -0.55 * s, 0.6 * s)), 0.07 * s, 0.0, accent, sides=4)
-            k.fin([head + Vector((sx * 0.3 * s, -0.25 * s, 0.05 * s)), head + Vector((sx * 0.75 * s, -0.55 * s, 0.25 * s)), head + Vector((sx * 0.35 * s, -0.5 * s, -0.1 * s))], 0.04 * s, accent)
-    elif plan == 'moth':
+        path = curve(pts, 3)
+        with k.limb(7, lambda co: 1 - along(path)(co)):
+            faces = k.tube_r(path, [0.05 * s + 0.33 * s * (j / (len(path) - 1)) ** 0.7 for j in range(len(path))], body, sides=10)
+            for f in faces:
+                if f.normal.z < -0.3:
+                    k.paint([f], belly, 0.03)
+            for j in range(2, len(path) - 2, 3):
+                p = Vector(path[j])
+                k.fin([p + Vector((0, 0.08 * s, 0.2 * s)), p + Vector((0, -0.05 * s, 0.42 * s)), p + Vector((0, -0.12 * s, 0.22 * s))], 0.03 * s, belly)
+        head = Vector(path[-1]) + Vector((0, 0.35 * s, 0.15 * s))
+        with k.limb(8, along([Vector(path[-1]), head])):
+            k.blob([(head, (0.36 * s, 0.5 * s, 0.32 * s), body, 2, 0.02, 1.0), (head + Vector((0, 0.38 * s, -0.08 * s)), (0.22 * s, 0.25 * s, 0.17 * s), body, 1, 0.02, 1.0)],
+                   0.05 * s, 0.33, lambda f: belly if f.normal.z < -0.4 else body)
+            for sx in (-1, 1):
+                n = Vector((sx * 0.7, 0.55, 0.35)).normalized()
+                pet_eye(k, head + n * 0.34 * s + Vector((0, 0.05 * s, 0)), n, 0.12 * s, hexc('#ffd166'))
+                k.tube(curve([head + Vector((sx * 0.15 * s, -0.15 * s, 0.22 * s)), head + Vector((sx * 0.25 * s, -0.45 * s, 0.45 * s)), head + Vector((sx * 0.2 * s, -0.75 * s, 0.5 * s))], 3), 0.06 * s, 0.01 * s, belly, sides=5)
+                k.fin([head + Vector((sx * 0.3 * s, -0.2 * s, 0.02 * s)), head + Vector((sx * 0.75 * s, -0.45 * s, 0.2 * s)), head + Vector((sx * 0.35 * s, -0.5 * s, -0.08 * s))], 0.03 * s, belly)
+                k.tube(curve([head + Vector((sx * 0.1 * s, 0.6 * s, -0.12 * s)), head + Vector((sx * 0.4 * s, 0.75 * s, -0.25 * s)), head + Vector((sx * 0.55 * s, 0.6 * s, -0.4 * s))], 3), 0.015 * s, 0.006 * s, belly, sides=3)
+    elif pid == 'moonmoth':
+        body, wing, wing2, spot = hexc('#bde0fe'), hexc('#a2d2ff'), hexc('#cde7ff'), hexc('#f1f1f1')
         torso = Vector((0, 0, 1.2 * s))
-        k.ico(torso, (0.22 * s, 0.7 * s, 0.22 * s), shade(body, 0.7), subdiv=2, rough=0.03)
-        k.ico(torso + Vector((0, 0.65 * s, 0.05 * s)), 0.2 * s, shade(body, 0.8), subdiv=2, rough=0.02)
-        pet_eyes(k, torso + Vector((0, 0.65 * s, 0.05 * s)), 0.2 * s, spread=0.8, up=0.2, size=0.35)
-        for sx in (-1, 1):
-            for (y, sz, col) in ((0.15, 1.25, body), (-0.4, 0.85, accent)):
-                root = torso + Vector((sx * 0.15 * s, y * s, 0))
-                k.fin([root, root + Vector((sx * sz * 0.6 * s, 0.45 * sz * s, 0.35 * s)), root + Vector((sx * sz * s, 0.1 * sz * s, 0.3 * s)),
-                       root + Vector((sx * sz * 0.85 * s, -0.55 * sz * s, 0.15 * s))], 0.03 * s, col)
-                k.ico(root + Vector((sx * sz * 0.6 * s, 0.05 * s, 0.26 * s)), 0.1 * s * sz, extra, subdiv=1, rough=0)
-            k.tube([torso + Vector((sx * 0.08 * s, 0.75 * s, 0.15 * s)), torso + Vector((sx * 0.3 * s, 1.1 * s, 0.55 * s))], 0.02 * s, 0.015 * s, extra, sides=3)
-            k.fin([torso + Vector((sx * 0.3 * s, 1.1 * s, 0.55 * s)), torso + Vector((sx * 0.45 * s, 1.0 * s, 0.75 * s)), torso + Vector((sx * 0.2 * s, 1.15 * s, 0.7 * s))], 0.02 * s, extra)
-    return k.build(f'pet_{pid}', ao=0.18)
+        k.blob([(torso, (0.24 * s, 0.75 * s, 0.24 * s), body, 2, 0.15, 3.0)], 0.04 * s, 0.35, lambda f: shade(body, 0.85) if f.normal.z < 0 else body)
+        with k.limb(8, lambda co: 0.0):
+            head = torso + Vector((0, 0.7 * s, 0.05 * s))
+            k.blob([(head, (0.22 * s, 0.2 * s, 0.2 * s), WHITE, 1, 0.2, 3.0)], 0.03 * s, 0.35, lambda f: hexc('#f6f6f6'))
+            for sx in (-1, 1):
+                n = Vector((sx * 0.8, 0.5, 0.2)).normalized()
+                pet_eye(k, head + n * 0.18 * s, n, 0.1 * s, hexc('#1b1b1b'))
+                ant = [head + Vector((sx * 0.06 * s, 0.1 * s, 0.15 * s)), head + Vector((sx * 0.25 * s, 0.35 * s, 0.55 * s))]
+                k.tube(ant, 0.015 * s, 0.01 * s, spot, sides=3)
+                for j in range(5):  # feathery antennae
+                    p = Vector(ant[0]).lerp(Vector(ant[1]), (j + 1) / 6)
+                    k.fin([p, p + Vector((sx * 0.08 * s, 0.05 * s, -0.03 * s)), p + Vector((0, 0.04 * s, 0.02 * s))], 0.01 * s, spot)
+        for limb, sx in ((5, -1), (6, 1)):
+            root = torso + Vector((sx * 0.15 * s, 0.1 * s, 0.05 * s))
+            tip = root + Vector((sx * 1.4 * s, 0.1 * s, 0.35 * s))
+            with k.limb(limb, along([root, tip])):
+                for (y, sz, col) in ((0.25, 1.3, wing), (-0.45, 0.95, wing2)):
+                    r0 = root + Vector((0, y * s, 0))
+                    k.fin([r0, r0 + Vector((sx * sz * 0.6 * s, 0.5 * sz * s, 0.3 * s)), r0 + Vector((sx * sz * s, 0.15 * sz * s, 0.3 * s)),
+                           r0 + Vector((sx * sz * 0.9 * s, -0.55 * sz * s, 0.12 * s)), r0 + Vector((sx * 0.25 * s, -0.4 * sz * s, 0.0))], 0.025 * s, col)
+                    k.ico(r0 + Vector((sx * sz * 0.6 * s, 0.0, 0.24 * s)), (0.13 * s * sz, 0.13 * s * sz, 0.03 * s), spot, subdiv=1, rough=0)
+                    k.ico(r0 + Vector((sx * sz * 0.6 * s, 0.0, 0.26 * s)), (0.07 * s * sz, 0.07 * s * sz, 0.02 * s), hexc('#7fa8d8'), subdiv=1, rough=0)
+                # A moon moth's long trailing tails on the hind wings.
+                r1 = root + Vector((sx * 0.5 * s, -0.75 * s, 0.05 * s))
+                k.tube(curve([r1, r1 + Vector((sx * 0.15 * s, -0.5 * s, -0.05 * s)), r1 + Vector((sx * 0.1 * s, -0.95 * s, 0.05 * s))], 3), 0.05 * s, 0.03 * s, wing2, sides=4)
+    return k.build(f'pet_{pid}', ao=0.12)
 
 # ---- small scenery ---------------------------------------------------------------------------------------
 

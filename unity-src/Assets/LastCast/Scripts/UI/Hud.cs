@@ -599,7 +599,8 @@ namespace LastCast
             var rarity = GameData.I.Rarity(c.species.rarity);
             Color rc = rarity.Color;
             bool special = c.species.rarity == "legendary" || c.species.rarity == "mythic";
-            float w = S(340), h = S(c.tier != null ? 262 : 232);
+            // Just the words: the fish itself is the one in your hands, flapping (RodView).
+            float w = S(340), h = S(c.tier != null ? 112 : 86);
             var r = new Rect(Screen.width / 2 - w / 2, Screen.height * 0.16f, w, h);
             // Pop in with a little overshoot and spin, as the 2D card does.
             float t = Mathf.Clamp01(age / 0.55f);
@@ -615,7 +616,7 @@ namespace LastCast
             {
                 GUI.BeginGroup(new Rect(r.x + S(3), r.y + S(3), r.width - S(6), r.height - S(6)));
                 var m = GUI.matrix;
-                var centre = new Vector2(r.width / 2, r.height * 0.4f);
+                var centre = new Vector2(r.width / 2, r.height * 0.5f);
                 GUIUtility.RotateAroundPivot(Time.time * 30, centre);
                 GUI.DrawTexture(new Rect(centre.x - w, centre.y - w, w * 2, w * 2), Skin.Rays(rc));
                 GUI.matrix = m;
@@ -623,23 +624,14 @@ namespace LastCast
             }
             string head = c.tier == "giant" ? "A GIANT!" : c.tier == "trophy" ? "TROPHY FISH!" : c.isNew ? "NEW SPECIES!" : "YOU CAUGHT";
             Label(new Rect(r.x, r.y + S(12), r.width, S(18)), head, new GUIStyle(small) { fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter }, rc);
-            var icon = FishIcons.Get(c.species.id, urgent: true);
-            if (icon)
-            {
-                var m = GUI.matrix;
-                var ir = new Rect(r.x + S(20), r.y + S(30) - Mathf.Sin(Time.time * 4) * S(3), r.width - S(40), S(150));
-                GUIUtility.RotateAroundPivot(Mathf.Sin(Time.time * 3.9f) * 3, ir.center);
-                GUI.DrawTexture(ir, icon, ScaleMode.ScaleToFit);
-                GUI.matrix = m;
-            }
             Color nameColour = c.species.rarity == "mythic" ? Color.HSVToRGB(Mathf.Repeat(Time.time * 0.25f, 1), 0.55f, 1) : Skin.Text;
-            Label(new Rect(r.x, r.y + S(176), r.width, S(30)), c.species.name, new GUIStyle(title) { fontSize = Mathf.RoundToInt(S(22)), alignment = TextAnchor.MiddleCenter, wordWrap = false }, nameColour);
-            Label(new Rect(r.x, r.y + S(204), r.width, S(20)), $"<b><color={Hex(rc)}>{rarity.label}</color></b> · {c.kg} kg · +{c.points} pts · +{c.coins} coins{(c.hotspot ? " · hotspot bonus" : "")}",
+            Label(new Rect(r.x, r.y + S(30), r.width, S(30)), c.species.name, new GUIStyle(title) { fontSize = Mathf.RoundToInt(S(22)), alignment = TextAnchor.MiddleCenter, wordWrap = false }, nameColour);
+            Label(new Rect(r.x, r.y + S(58), r.width, S(20)), $"<b><color={Hex(rc)}>{rarity.label}</color></b> · {c.kg} kg · +{c.points} pts · +{c.coins} coins{(c.hotspot ? " · hotspot bonus" : "")}",
                 new GUIStyle(small) { alignment = TextAnchor.MiddleCenter }, new Color(1, 1, 1, 0.85f));
             if (c.tier != null)
             {
                 var tt = Trophies.Tiers[c.tier];
-                Label(new Rect(r.x, r.y + S(228), r.width, S(22)), $"{(c.tier == "giant" ? "♛" : "★")} \"{c.trophyName}\" · {tt.label} · points ×{tt.points}", new GUIStyle(bold) { alignment = TextAnchor.MiddleCenter }, tt.color);
+                Label(new Rect(r.x, r.y + S(82), r.width, S(22)), $"{(c.tier == "giant" ? "♛" : "★")} \"{c.trophyName}\" · {tt.label} · points ×{tt.points}", new GUIStyle(bold) { alignment = TextAnchor.MiddleCenter }, tt.color);
             }
             GUI.matrix = oldM;
             GUI.color = oldC;

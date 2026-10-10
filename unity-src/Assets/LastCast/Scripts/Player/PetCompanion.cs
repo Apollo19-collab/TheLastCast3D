@@ -8,8 +8,7 @@ namespace LastCast
     public class PetCompanion : MonoBehaviour
     {
         string shown;
-        MeshFilter filter;
-        MeshRenderer render;
+        PetAnimator body; // the rigged pet (rebuilt when you change pets)
         Vector3 vel;
         float cheer, hop, seed;
 
@@ -17,14 +16,15 @@ namespace LastCast
         {
             var go = new GameObject("Pet");
             var c = go.AddComponent<PetCompanion>();
-            c.filter = go.AddComponent<MeshFilter>();
-            c.render = go.AddComponent<MeshRenderer>();
-            c.render.sharedMaterial = WorldBuilder.LitMaterial;
             c.seed = Random.value * 10;
             return c;
         }
 
-        public void Cheer() => cheer = 1;
+        public void Cheer()
+        {
+            cheer = 1;
+            if (body) body.Cheer = 1;
+        }
 
         void Update()
         {
@@ -34,8 +34,8 @@ namespace LastCast
             if (id != shown)
             {
                 shown = id;
-                filter.sharedMesh = id != null ? PetMeshes.Build(id) : null;
-                render.enabled = id != null;
+                if (body) Destroy(body.gameObject);
+                body = id != null ? PetAnimator.Create(transform, id) : null;
                 if (id != null) transform.position = g.Player.transform.position - g.Player.Forward * 1.5f;
             }
             if (id == null) return;
@@ -72,7 +72,7 @@ namespace LastCast
             if (look.motion == PetMeshes.Motion.Walk && speed > 0.3f)
             {
                 hop += Time.deltaTime * 11;
-                y += Mathf.Abs(Mathf.Sin(hop)) * 0.12f;
+                y += Mathf.Abs(Mathf.Sin(hop)) * 0.04f; // its legs do the walking now
             }
             y += Mathf.Sin(cheer * Mathf.PI) * 0.6f; // a happy jump
             transform.position = new Vector3(next.x, y, next.z);

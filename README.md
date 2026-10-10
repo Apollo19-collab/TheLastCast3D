@@ -28,6 +28,8 @@ Run `Game\TheLastCast.exe`. Your progress saves to
   shows the whole world, and clicking a place or any dry land on it fast-travels you there
 - **Pets**: all 30, with their abilities. The Travelling Zoo moves around the lake every 15 minutes
   with three animals (the same ones as the web game at that moment); your pet follows you around.
+  Each is modelled on the real animal (or the creature it's named for) and moves like it: legs walking
+  in step, wings flapping, tails wagging, tentacles rippling, a crab's claws clacking.
 - **Armour**: all 15 sets, with per-piece perks and full-set effects. Every piece has its own model (an
   oilskin coat, a pea coat, a brass diving helmet, ember plate...), mix and match; the Armour tab shows
   your angler in 3D (point at a piece to try it on), and other players see exactly what you wear

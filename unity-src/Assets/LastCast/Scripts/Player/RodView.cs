@@ -212,7 +212,7 @@ namespace LastCast
                 r.sharedMaterial = WorldBuilder.LitMaterial;
             }
             r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
-            holdTimer = tier != null ? 4f : 2.6f;
+            holdTimer = tier != null || s.rarity == "legendary" || s.rarity == "mythic" ? 5.5f : 3.4f; // as long as the catch card
         }
 
         /// <summary>A species' low-poly model (Blender, in its own colours), or a simple fish coloured by species and edged in its rarity's colour.</summary>
