@@ -163,6 +163,19 @@ namespace LastCast
                 yield return Shot(name);
             }
             g.Hud.OpenForScreenshot("none");
+
+            // Fast travel: a place picked on the map, then the trip.
+            var pine = data.areas.Find(a => a.name == "Pine Point" && a.label != null) ?? data.areas.Find(a => a.label != null);
+            var dest = new Vector2(pine.label.x, pine.label.y + 30);
+            g.Hud.OpenForScreenshot("map");
+            g.Hud.PickTravel(pine.name, dest);
+            yield return new WaitForSeconds(1);
+            yield return Shot("9b-map-travel");
+            var before = g.Player.WorldPos;
+            g.FastTravel(dest, pine.name);
+            yield return new WaitForSeconds(1.5f);
+            Debug.Log($"[autoshot] fast travel to {pine.name}: from {before} to {g.Player.WorldPos} ({Vector2.Distance(g.Player.WorldPos, dest) / 10:0.0} m from the pin), menu {g.MenuOpen}");
+            yield return Shot("9c-after-travel");
             yield return VoyageTour();
             yield return PoseTour();
             Application.Quit();

@@ -124,7 +124,6 @@ const data = {
       deck: sea.structures.map((r) => ({ x: r.x, y: r.y, w: r.w, h: r.h })),
       cabin: sea.solid[0],
       hotspots: sea.hotspots,
-      crowdPenalty: sea.crowdPenalty,
       castFail: sea.castFail,
       openSea: seaZone(null),
       events: Object.entries(SEA_EVENTS).map(([id, e]) => ({ id, ...e })),

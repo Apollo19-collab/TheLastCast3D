@@ -196,16 +196,13 @@ namespace LastCast
             var b = Profile.Bonuses;
             EventMods ev = null;
             SeaMods mods = null;
-            float chum = 1, penalty = Tuning.CrowdPenalty;
-            int crowd;
+            float chum = 1;
             if (AtSea)
             {
                 var s = SeaWorld.ToSea(castTo);
                 zone = Voyage.I.Zone;
                 hotspot = Voyage.I.HotspotAt(s.x, s.y) != null;
                 mods = Voyage.I.Mods;
-                penalty = GameData.I.voyage.crowdPenalty; // a crowded deck is normal on a fishing boat
-                crowd = Multiplayer.I.BobbersNear(w.x, w.y, Tuning.CrowdRadius);
                 Voyage.I.OnLand(s.x, s.y); // a harpoon, if the boss is breaching there
             }
             else
@@ -213,17 +210,15 @@ namespace LastCast
                 hotspot = Game.I.HotspotAt(w.x, w.y) != null;
                 ev = Game.I.Events.ModsAt(w.x, w.y);
                 chum = Game.I.Chum.BiteBonus(w.x, w.y);
-                // Other anglers' bobbers close by slow your bites (not in a Feeding Shoal, where company helps).
-                crowd = ev?.ignoreCrowd == true ? 0 : Multiplayer.I.BobbersNear(w.x, w.y, Tuning.CrowdRadius);
             }
             float rate = zone.biteRate * stats.biteSpeed * (hotspot ? Tuning.HotspotBiteBoost : 1) * b.bite * b.ZoneBite(zone)
-                * chum * (ev?.bite ?? 1) * (mods?.biteSpeed ?? 1) / (1 + penalty * crowd);
+                * chum * (ev?.bite ?? 1) * (mods?.biteSpeed ?? 1); // fishing beside other anglers costs nothing
             State = LineState.Waiting;
             timer = (4 + Random.value * 8) / rate;
             BobberPos = castTo;
             Sfx.Play("plop");
             string spot = AtSea && hotspot && Voyage.I.Phase == VoyagePhase.Boss ? " (the weak spot! double damage)" : hotspot ? " (hotspot! rare fish more likely)" : "";
-            Game.I.Flash($"Bobber landed in the {zone.name}{spot}" + (crowd > 0 ? $" (crowded: {crowd} line{(crowd > 1 ? "s" : "")} nearby, bites slower)" : ""), 2.5f);
+            Game.I.Flash($"Bobber landed in the {zone.name}{spot}", 2.5f);
         }
 
         void Bite()

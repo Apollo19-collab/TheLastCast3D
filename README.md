@@ -18,12 +18,14 @@ Run `Game\TheLastCast.exe`. Your progress saves to
 | At sea | E beats off whatever has grabbed the rail in the boss fight |
 | Chum bucket | C to put one down (buy them at the Bait Shop); C beside it picks it up again, with the time and fish it had left |
 | Menus | G tackle, R armour, P pets, I fish index, T goals, K trophies, H history, V events, M map, N online, O / Esc options (General, Graphics, Controls) |
+| Fast travel | M for the map, click a place (or any dry land), then Travel. Not from the boat or with a line out |
 | Chat | Enter (when you're in a multiplayer game) |
 
 ### What's in it (from the web game)
 
 - 110 fish, 86 rods, reels, lines and baits, the Bait Shop and the three travelling tackle shops
-- Levels 1-75, trophies and named giants, the Angler's Map, hotspots
+- Levels 1-75, trophies and named giants, hotspots, and the Angler's Map (free at the Bait Shop): M
+  shows the whole world, and clicking a place or any dry land on it fast-travels you there
 - **Pets**: all 30, with their abilities. The Travelling Zoo moves around the lake every 15 minutes
   with three animals (the same ones as the web game at that moment); your pet follows you around.
 - **Armour**: all 15 sets, with per-piece perks and full-set effects
@@ -55,7 +57,7 @@ Run `Game\TheLastCast.exe`. Your progress saves to
 - Shared: everyone's angler (walking, running, hopping, casting and reeling as they do), line
   and pet, where they are (a dot in their colour on the minimap and the Angler's Map, with
   their name; anyone out at sea is listed under the map), catches, trophies and level-ups, chat (Enter),
-  the hotspots, chum buckets, crowding (bobbers close together bite slower) and the map
+  the hotspots (everyone can fish the same one, with no penalty for company), chum buckets and the map
   events, which become co-op again (goals grow with the group, everyone who helps is paid).
 - **Voyages together:** everyone who boards the same boat sails the same voyage (same stops,
   events, missions and boss), sees each other on deck, and shares the missions, the boss's

@@ -2,6 +2,7 @@
 // the world, the angler, light and fog, hotspots, the HUD and menus, and the
 // save file. No scene setup is needed beyond the template's default scene.
 
+using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using Newtonsoft.Json.Linq;
@@ -334,6 +335,46 @@ namespace LastCast
         {
             foreach (var h in Hotspots) if (Vector2.Distance(new Vector2(h.x, h.y), new Vector2(x, y)) <= h.r) return h;
             return null;
+        }
+
+        // ---- fast travel (from the Angler's Map) ----------------------------------------------------
+
+        bool travelling;
+
+        /// <summary>Go to a place on the lake (world units): the nearest dry land to it, through a quick fade.
+        /// Not from the boat (at the dock or at sea), and not with a line out.</summary>
+        public void FastTravel(Vector2 to, string name)
+        {
+            var v = Voyage.I;
+            string why = travelling ? "" :
+                Place.AtSea || (v != null && v.Boarded != 0) || Player.Anchor != null ? "You can't fast travel from the boat." :
+                Fishing.State != LineState.Idle ? "Reel in first (right-click or R), then travel." : null;
+            if (why != null)
+            {
+                if (why.Length > 0) { Flash(why, 3); Sfx.Play("error"); }
+                return;
+            }
+            // The nearest dry ground to the spot, spiralling out.
+            var map = WorldMap.I;
+            float x = to.x, y = to.y;
+            for (int r = 0; r < 1200 && !map.IsWalkable(x, y); r += 8) { x = to.x + Mathf.Cos(r * 0.7f) * r * 0.25f; y = to.y + Mathf.Sin(r * 0.7f) * r * 0.25f; }
+            if (!map.IsWalkable(x, y)) { Flash("There's nowhere to stand there.", 3); Sfx.Play("error"); return; }
+            StartCoroutine(Travel(map.ToUnity(x, y), name));
+        }
+
+        IEnumerator Travel(Vector3 at, string name)
+        {
+            travelling = true;
+            Hud.CloseMenus();
+            Sfx.Play("travel");
+            for (float t = 0; t < 1; t += Time.unscaledDeltaTime / 0.3f) { Hud.Fade = t; yield return null; }
+            Hud.Fade = 1;
+            Player.Teleport(at, Player.Yaw);
+            yield return new WaitForSecondsRealtime(0.15f);
+            for (float t = 1; t > 0; t -= Time.unscaledDeltaTime / 0.45f) { Hud.Fade = t; yield return null; }
+            Hud.Fade = 0;
+            Flash($"You travelled to {name}.", 2.5f);
+            travelling = false;
         }
 
         // ---- messages (shown by the HUD) ----------------------------------------------------------

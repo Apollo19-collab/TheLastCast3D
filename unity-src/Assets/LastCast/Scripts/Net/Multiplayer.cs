@@ -407,22 +407,6 @@ namespace LastCast
             Send(StateMsg, JsonConvert.SerializeObject(st), NetworkDelivery.UnreliableSequenced);
         }
 
-        /// <summary>Other anglers' bobbers in the water near a point (world units), for crowding.</summary>
-        public int BobbersNear(float x, float y, float radius)
-        {
-            int n = 0;
-            var map = WorldMap.I;
-            foreach (var r in Remotes.Values)
-            {
-                if (!r || r.State == null) continue;
-                var ls = (LineState)r.State.ls;
-                if (ls == LineState.Idle || ls == LineState.Casting) continue;
-                var w = map.ToWorld(new Vector3(r.State.bx, 0, r.State.bz));
-                if (Vector2.Distance(w, new Vector2(x, y)) <= radius) n++;
-            }
-            return n;
-        }
-
         void OnApplicationQuit()
         {
             if (Online && Session != null) _ = Session.LeaveAsync();

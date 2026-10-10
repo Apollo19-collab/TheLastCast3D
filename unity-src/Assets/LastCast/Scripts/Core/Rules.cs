@@ -18,9 +18,7 @@ namespace LastCast
         public const float CoinsPerPoint = 1.25f;
         public const float HotspotBiteBoost = 1.8f;
         public const float HotspotScoreBonus = 1.25f;
-        public const int MapPrice = 750;
-        public const float CrowdRadius = 90; // world units: other bobbers this close slow your bites
-        public const float CrowdPenalty = 0.6f;
+        public const int MapPrice = 0; // free at the Bait Shop
 
         public const float WalkSpeed = 4.2f; // metres per second
         public const float SprintSpeed = 1.65f; // x walk

@@ -50,6 +50,7 @@ namespace LastCast
         static AudioClip Clip(string name) => name switch
         {
             "cast" => Make(name, 0.35f, (t, r) => ((float)r.NextDouble() * 2 - 1) * Env(t, 0.35f, 0.15f) * 0.35f),
+            "travel" => Make(name, 0.6f, (t, r) => ((float)r.NextDouble() * 2 - 1) * Env(t, 0.6f, 0.25f) * 0.18f + Mathf.Sin(2 * Mathf.PI * (220 + 440 * t) * t) * Env(t, 0.6f, 0.2f) * 0.12f),
             "plop" => Make(name, 0.25f, (t, r) => Mathf.Sin(2 * Mathf.PI * (520 - 900 * t) * t) * Env(t, 0.25f) * 0.5f),
             "bite" => Make(name, 0.3f, (t, r) => Mathf.Sin(2 * Mathf.PI * 330 * t) * Env(t, 0.12f) * 0.5f + Mathf.Sin(2 * Mathf.PI * 330 * (t - 0.15f)) * (t > 0.15f ? Env(t - 0.15f, 0.12f) : 0) * 0.5f),
             "hook" => Make(name, 0.2f, (t, r) => Mathf.Sin(2 * Mathf.PI * (300 + 600 * t) * t) * Env(t, 0.2f) * 0.45f),

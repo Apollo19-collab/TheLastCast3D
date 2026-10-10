@@ -25,7 +25,7 @@ namespace LastCast
         public bool Contains(float x, float y) => Vector2.Distance(new Vector2(place.x, place.y), new Vector2(x, y)) <= radius;
     }
 
-    public class EventMods { public float bite = 1, rare = 1, points = 1; public bool ignoreCrowd; }
+    public class EventMods { public float bite = 1, rare = 1, points = 1; }
 
     public class MapEvents : MonoBehaviour
     {
@@ -191,8 +191,8 @@ namespace LastCast
             var t = Cfg.tuning;
             return a.type switch
             {
-                // The Feeding Shoal gets faster with every angler in it, and company doesn't crowd it.
-                "shoal" => new EventMods { bite = Mathf.Min(t.shoal.maxBite, t.shoal.bite + t.shoal.perAngler * (AnglersIn - 1)), rare = t.shoal.rare, ignoreCrowd = true },
+                // The Feeding Shoal gets faster with every angler in it.
+                "shoal" => new EventMods { bite = Mathf.Min(t.shoal.maxBite, t.shoal.bite + t.shoal.perAngler * (AnglersIn - 1)), rare = t.shoal.rare },
                 "haul" => new EventMods { bite = t.haul.bite },
                 "tide" when Rush > 0 => new EventMods { points = t.tide.points, rare = t.tide.rare },
                 _ => null,

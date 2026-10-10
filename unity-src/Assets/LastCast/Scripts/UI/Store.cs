@@ -74,7 +74,7 @@ namespace LastCast
             Achievements.Check(p);
             p.Save();
             Sfx.Play("coin");
-            Game.I.Hud.Feed("You bought the Angler's Map! Press M to see the whole world.", Skin.Green);
+            Game.I.Hud.Feed("You picked up the Angler's Map! Press M to see the whole world, and click a place on it to travel there.", Skin.Green);
             Game.I.Hud.Toast("map", "New item", "The Angler's Map", "Press M to open it");
             return true;
         }

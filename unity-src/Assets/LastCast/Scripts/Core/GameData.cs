@@ -198,7 +198,7 @@ namespace LastCast
         public string[] times;
         public int xp;
         public SeaBoat seaBoat;
-        public float width, height, crowdPenalty;
+        public float width, height;
         public List<RectU> deck;
         public RectU cabin;
         public SeaHotspots hotspots;

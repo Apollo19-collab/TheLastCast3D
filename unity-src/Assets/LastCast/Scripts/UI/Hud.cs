@@ -137,7 +137,7 @@ namespace LastCast
         {
             if (m == Menu.Map && !P.worldMap)
             {
-                Flash($"You need the Angler's Map to see the whole world. Buy it at the Bait Shop on South Beach for {Tuning.MapPrice} coins.", 4);
+                Flash("You need the Angler's Map to see the whole world. Pick one up free at the Bait Shop on South Beach.", 4);
                 Sfx.Play("error");
                 return;
             }
@@ -299,6 +299,7 @@ namespace LastCast
             }
             DrawDock();
             if (GraphicsOptions.ShowFps) DrawFps();
+            if (Open != Menu.Map) travelPick = null;
             switch (Open)
             {
                 case Menu.Map: DrawMap(); break;
@@ -319,6 +320,7 @@ namespace LastCast
                     _ => (System.Action)DrawOptions,
                 }); break;
             }
+            DrawFade();
         }
 
         // ---- player card ----------------------------------------------------------------------------------
@@ -895,14 +897,14 @@ namespace LastCast
                 GUILayout.Box(Skin.Icon("map"), GUIStyle.none, GUILayout.Width(S(40)), GUILayout.Height(S(40)));
                 GUILayout.BeginVertical();
                 GUILayout.Label("<b>Angler's Map</b>", text);
-                GUILayout.Label("A hand-drawn map of the whole country: every lake and pond, the shops and the hotspots. Press M to open it.", smallDim);
+                GUILayout.Label("A hand-drawn map of the whole country: every lake and pond, the shops and the hotspots. Press M to open it, and click a place on it to travel there.", smallDim);
                 GUILayout.EndVertical();
                 GUILayout.FlexibleSpace();
                 if (P.worldMap) GUILayout.Label("Owned · press M", new GUIStyle(bold) { normal = { textColor = Skin.Green }, alignment = TextAnchor.MiddleCenter }, GUILayout.Width(S(170)));
                 else
                 {
                     GUI.enabled = P.coins >= Tuning.MapPrice;
-                    if (GUILayout.Button($"Buy · {Tuning.MapPrice}c", buy, GUILayout.Width(S(170)))) Store.BuyMap(P);
+                    if (GUILayout.Button(Tuning.MapPrice > 0 ? $"Buy · {Tuning.MapPrice}c" : "Take one · free", buy, GUILayout.Width(S(170)))) Store.BuyMap(P);
                     GUI.enabled = true;
                 }
                 GUILayout.EndHorizontal();
@@ -1601,7 +1603,8 @@ namespace LastCast
                 ("Chum", "C: put a chum bucket down (buy them at the Bait Shop); C beside it picks it up again to move it"),
                 ("Online", "N: host a game or join one with a code · Enter to chat"),
                 ("Pets", "E at the Travelling Zoo wagon to adopt one; it moves every 15 minutes"),
-                ("Hotspots", "Golden rings on the water: faster bites and rarer fish"),
+                ("Travel", "M opens the Angler's Map (free at the Bait Shop): click a place or any dry land, then Travel"),
+                ("Hotspots", "Golden rings on the water: faster bites and rarer fish. Share them: fishing beside others costs nothing"),
                 ("Voyages", "Every 15 minutes a boat docks at South Beach: E to board. Three stops at sea, then a boss"),
                 ("Boss", "Land fish to hurt it (double in the red weak spot), cast into the golden ring when it breaches, mash E on grabs, dodge the red"),
             };
@@ -1695,6 +1698,7 @@ namespace LastCast
                 GUI.DrawTexture(new Rect(q.x - S(2), q.y - S(2), S(4), S(4)), Texture2D.whiteTexture);
             }
             Shadowed(new Rect(mp.x - S(40), mp.y - S(32), S(80), S(18)), "You", tag, Skin.Gold);
+            DrawTravel(x0, y0, scale, mw, mh, tag);
         }
 
         /// <summary>The other anglers who are on the lake (not out at sea), with where they are in world units.</summary>
